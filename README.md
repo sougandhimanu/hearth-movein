@@ -53,25 +53,25 @@ Then choose one of the two ways to run it.
 ## Run with the real API
 Uses Muse Spark and SAM 3.1, so you need a Meta Model API key from [dev.meta.ai](https://dev.meta.ai).
 
-1. Create a file named `.env` in the `hearth-movein` folder containing one line:
+1. Copy `.env.example` to `.env`:
+   - Windows: `copy .env.example .env`
+   - macOS / Linux: `cp .env.example .env`
+2. Open `.env` in a text editor and replace `your-meta-model-api-key` with your key:
    ```
    MODEL_API_KEY=your-key
    ```
-   For example `echo MODEL_API_KEY=your-key > .env`, which works in Windows, macOS and Linux terminals.
-2. Start the app:
+3. Start the app:
    ```
    python -m uvicorn app.main:app
    ```
-3. Open http://localhost:8000. If port 8000 is already in use, add `--port 8001` and open http://localhost:8001 instead.
+4. Open http://localhost:8000. If port 8000 is already in use, add `--port 8001` and open http://localhost:8001 instead. No mock-mode banner at the top means your key was found.
 
-Each check takes 1-2 minutes while the agents work.
-
-Optional `.env` settings: `SPARK_MODEL` and `SAM_MODEL` to choose models.
+Each check takes 1-2 minutes while the agents work. `.env.example` also lists optional settings, such as `SPARK_MODEL` and `SAM_MODEL` to choose models.
 
 ## Run in mock mode (no API key)
 Runs offline with a fake model, to try the app without a key. Results are canned (the same damage and clauses every time), and a banner at the top says mock mode is on.
 
-1. Do not create a `.env` file (or delete it).
+1. Skip the `.env` file, or leave the placeholder key in it unchanged.
 2. Start the app:
    ```
    python -m uvicorn app.main:app

@@ -37,7 +37,9 @@ def _user_data_dir() -> Path:
 DATA_DIR = Path(os.getenv("DATA_DIR") or _user_data_dir())
 
 BASE_URL = os.getenv("META_BASE_URL", "https://api.meta.ai/v1")
-API_KEY = os.getenv("MODEL_API_KEY", "")
+API_KEY = os.getenv("MODEL_API_KEY", "").strip()
+if API_KEY == "your-meta-model-api-key":  # .env.example copied but not filled in: run in mock mode, not with a bad key
+    API_KEY = ""
 SPARK_MODEL = os.getenv("SPARK_MODEL", "muse-spark-1.3")
 SAM_MODEL = os.getenv("SAM_MODEL", "sam-3.1")
 

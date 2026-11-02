@@ -319,3 +319,15 @@ def test_readme_walkthrough_same_photos_are_already_there():
     move_in = client.post("/api/condition", files=photos()).json()
     out = client.post("/api/condition", files=photos(), data={"move_in_id": move_in["id"], "matches": '["p1","p2"]'}).json()
     assert out["data"]["findings"] and all(f["status"] == "pre_existing" for f in out["data"]["findings"])
+
+
+@pytest.mark.parametrize("key,mock", [("your-meta-model-api-key", True), ("", True), ("real-key-123", False)])
+def test_unedited_env_example_runs_in_mock_mode(key, mock):
+    import subprocess
+    import sys
+
+    env = {**os.environ, "MODEL_API_KEY": key}
+    env.pop("MOCK_MODE", None)
+    out = subprocess.run([sys.executable, "-c", "from app import config; print(config.MOCK_MODE)"],
+                         env=env, capture_output=True, text=True, cwd=os.path.join(os.path.dirname(__file__), ".."))
+    assert out.stdout.strip() == str(mock), out.stderr
