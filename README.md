@@ -1,79 +1,110 @@
 # Hearth Move-In Guardian
 
-Helps renters understand a lease before they sign and document a room's condition before they move in, so they can protect their deposit.
+Helps renters keep their deposit. Understand your lease before you sign, document your room when you move in, and prove what was already there when you move out.
 Built with Muse Spark and SAM 3.1 for the Meta Global AI Developer Hackathon.
 
 > Not legal advice. Flags are questions to ask the landlord, each backed by an exact quote from the lease.
 
 ## What it does
 
-### 1. Lease checker (Muse Spark)
-Upload a lease as a PDF, photo or `.txt` file and choose the language you want explanations in. The agent:
-- extracts the key terms (rent, deposit, dates, fees, renewal, entry, repairs), each with an exact quote;
-- flags risky or unusual clauses, explains them in your language and suggests a question to ask;
-- saves reminders for deadlines such as rent due dates, the move-in inspection window and the renewal notice;
-- drafts a polite email to the landlord about the flagged items.
+### 1. Lease checker
+Upload a lease (PDF, photo or `.txt`) and choose your language. The app:
+- pulls out the key terms: rent, deposit, dates, fees, renewal, entry, repairs;
+- flags risky or unusual clauses, explains them in your language and suggests what to ask;
+- sets reminders for deadlines like rent, the move-in inspection window and the renewal notice;
+- drafts a polite email to the landlord.
 
-A flag is kept only if its quote is found word for word in the lease. That check runs in code, not in the model.
+Every flag quotes the lease word for word, and the app checks that quote against the lease itself.
 
-### 2. Move-in condition report (Muse Spark + SAM 3.1)
-Upload photos of each room, optionally linked to a lease. The agent:
-- scans each photo for visible damage (stains, cracks, scratches, peeling paint, mold...);
-- outlines each defect with SAM 3.1, retrying with a simpler word if nothing is found;
-- has Muse Spark check each outline and keeps only the ones it confirms;
-- saves a timestamped report with outlined photos and the lease's inspection deadline.
+### 2. Move-in condition report
+Upload a photo of each room. The app finds visible damage (stains, cracks, scratches, peeling paint, mold...), outlines it on the photo, double-checks each outline, and saves a timestamped report linked to your lease's inspection deadline.
+
+### 3. Move-out check
+Upload move-out photos taken from the same spots and match them to your move-in report. The app compares each pair and marks every piece of damage as **already there at move-in**, **worse**, **new** or **unclear**. It then drafts an email asking the landlord not to deduct for anything that was already there. Damage is only marked "already there" when the side-by-side comparison confirms it.
+
+### Works in your language
+Explanations, reminders and reports can be written in the language you choose (for example Hindi, Telugu, Tamil, Spanish or Japanese), and leases written in those languages can be checked too.
 
 ### Vault
-Leases, reports, reminders and the full agent chats (every tool call each agent made) are stored locally in SQLite. Anything can be deleted.
+Everything you check is saved on your computer, never in this project folder: leases, reports, reminders and a log of what each agent did. You can open or delete anything.
 
-## Quick start
+## Setup
+You need **Python 3.10 or newer** (tested on 3.12).
+
 ```
-pip install -r requirements.txt
-echo MODEL_API_KEY=your-key > .env
-uvicorn app.main:app --reload
+git clone https://github.com/sougandhimanu/hearth-movein.git
+cd hearth-movein
+python -m venv .venv
 ```
-Open http://localhost:8000.
+On macOS / Linux, use `python3` wherever this guide says `python` if `python` is not found.
 
-Without a key the app runs in **mock mode** with fake model responses (shown by a banner), so you can try the whole flow offline.
+Activate the environment:
+- Windows (Command Prompt): `.venv\Scripts\activate`
+- Windows (PowerShell): `.venv\Scripts\Activate.ps1`. If it says running scripts is disabled, first run `Set-ExecutionPolicy -Scope Process Bypass`, which only affects this window.
+- macOS / Linux: `source .venv/bin/activate`
 
-To try it with sample data, upload `samples/sample_lease.txt` or `samples/sample_lease.pdf`, then the `samples/room_*.jpg` photos. To regenerate the samples, run `python scripts/make_samples.py`.
+Install:
+```
+python -m pip install -r requirements.txt
+```
 
-### Settings
-Set these in `.env`. Only `MODEL_API_KEY` is required.
+Then choose one of the two ways to run it.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `MODEL_API_KEY` | none | Meta Model API key. Never commit it. |
-| `SPARK_MODEL` | `muse-spark-1.3` | Model for reasoning and vision. |
-| `SAM_MODEL` | `sam-3.1` | Model for outlining damage. |
-| `META_BASE_URL` | `https://api.meta.ai/v1` | API base URL. |
-| `MOCK_MODE` | off | Set to `1` to force offline mode. |
-| `DATA_DIR` | `./data` | Where the Vault is stored. |
+## Run with the real API
+Uses Muse Spark and SAM 3.1, so you need a Meta Model API key from [dev.meta.ai](https://dev.meta.ai).
+
+1. Create a file named `.env` in the `hearth-movein` folder containing one line:
+   ```
+   MODEL_API_KEY=your-key
+   ```
+   For example `echo MODEL_API_KEY=your-key > .env`, which works in Windows, macOS and Linux terminals.
+2. Start the app:
+   ```
+   python -m uvicorn app.main:app
+   ```
+3. Open http://localhost:8000. If port 8000 is already in use, add `--port 8001` and open http://localhost:8001 instead.
+
+Each check takes 1-2 minutes while the agents work.
+
+Optional `.env` settings: `SPARK_MODEL` and `SAM_MODEL` to choose models.
+
+## Run in mock mode (no API key)
+Runs offline with a fake model, to try the app without a key. Results are canned (the same damage and clauses every time), and a banner at the top says mock mode is on.
+
+1. Do not create a `.env` file (or delete it).
+2. Start the app:
+   ```
+   python -m uvicorn app.main:app
+   ```
+3. Open http://localhost:8000. Each check finishes in a second.
+
+To force mock mode even with a key in `.env`, add the line `MOCK_MODE=1` to it.
+
+## Try it with the sample files
+Use the files in the `samples` folder, in either mode:
+1. **Lease checker:** upload `sample_lease.pdf`. Optionally type another language, such as Hindi or Telugu.
+2. **Move-in report:** upload `room_living.jpg` and `room_bedroom.jpg`, and link the lease.
+3. **Move-out check:** choose that move-in report, upload the same two photos, and keep the suggested matches. Because nothing changed, every defect is marked **already there at move-in**, and an email to the landlord is drafted.
 
 ## How it works
+Each feature is an agent: the model decides which tool to use next, and the code runs the tool and enforces the rules, so the model cannot skip a check.
+Muse Spark reads leases and photos; SAM 3.1 outlines the damage.
+
 ```
 app/
-  main.py             FastAPI routes and Vault endpoints
-  lease_agent.py      lease checker: term extraction, then a tool-calling agent loop
-  condition_agent.py  condition report: scan, outline, check, record
-  meta.py             Meta API client (Chat Completions, Responses API, SAM 3.1)
+  main.py             web server and Vault endpoints
+  lease_agent.py      lease checker
+  condition_agent.py  move-in reports and move-out checks
+  meta.py             Meta API client (Muse Spark, SAM 3.1)
   mock.py             offline stand-in for the API
-  overlay.py          draws outline boxes on photos
-  db.py               Vault (SQLite and stored files)
-static/index.html     single-page UI
+  db.py               Vault storage
+static/index.html     the web page
 ```
-
-Both agents are tool-calling loops over Chat Completions. The model chooses which tool to call, and the code runs it and enforces the rules:
-- **Lease:** `flag_clause` rejects any quote not found in the lease text; `set_reminder` stores a date only if it is a valid `YYYY-MM-DD`.
-- **Condition:** `record_finding` attaches an outline only if `check_outline` confirmed it.
-
-Image analysis (Muse Spark vision and SAM 3.1) runs inside the tools, so images and tool calling are never mixed in one request.
 
 ## Tests
 ```
-pytest
+python -m pytest
 ```
-Runs offline in mock mode.
+Runs offline in mock mode; no API key needed.
 
-## Data and privacy
-Everything stays on your machine in `data/`, which is git-ignored. The sample lease and photos are invented. For personal documents, use the standard model, not the "contributor" variants.
+The sample lease and photos are invented. For personal documents, use the standard model, not the "contributor" variants.

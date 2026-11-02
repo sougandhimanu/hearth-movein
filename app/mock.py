@@ -1,7 +1,8 @@
 """Offline stand-in for the Meta API, so the app and the tests run without a key.
 
 It is clearly labelled in the UI. It drives the REAL agent loops and tools, including one deliberately fabricated quote
-(which the quote verification must reject) and one SAM concept that returns nothing (which the agent must retry).
+(which the quote verification must reject) and one SAM concept that returns nothing (which the agent must retry) and one defect that SAM splits into two instances
+(whose boxes must be merged into one outline).
 """
 from __future__ import annotations
 
@@ -80,8 +81,14 @@ class MockMeta:
                     {"label": "hairline crack", "description": f"Thin crack running down the wall ({room}).", "severity": "low"},
                 ]
             }
+        if name == "move_out_compare":  # identical photos, or the stain: already there at move-in; anything else is new
+            same_photo = len(images) == 2 and images[0] == images[1]
+            if same_photo or "stain" in prompt.split("Defect seen in the move-out photo:", 1)[1].lower():
+                return {"status": "pre_existing", "reason": "(mock) The same stain is visible in the move-in photo."}
+            return {"status": "new", "reason": "(mock) This area is clear in the move-in photo."}
         if name == "outline_check":
-            return {"matches": True, "reason": "(mock) the outlined region covers the described defect"}
+            n = int(re.match(r"(\d+) numbered", prompt).group(1))
+            return {"matching_boxes": list(range(1, n + 1)), "covers_all": True, "reason": "(mock) the outlined regions cover the described defect"}
         raise ValueError(f"mock has no handler for {name}")
 
     # -- SAM ----------------------------------------------------------------------------------
@@ -93,7 +100,10 @@ class MockMeta:
         seed = sum(ord(c) for c in concept)
         x1 = int(w * (0.12 + 0.08 * (seed % 5)))
         y1 = int(h * (0.10 + 0.07 * (seed % 4)))
-        return [{"index": 0, "box": [x1, y1, min(w - 1, x1 + w // 4), min(h - 1, y1 + h // 5)], "w": w, "h": h, "confidence": 0.9, "has_mask": False}]
+        out = [{"index": 0, "box": [x1, y1, min(w - 1, x1 + w // 4), min(h - 1, y1 + h // 5)], "w": w, "h": h, "confidence": 0.9, "has_mask": False}]
+        if "stain" in concept:  # one defect split into two pieces
+            out.append({"index": 1, "box": [x1 + w // 5, y1 + h // 6, min(w - 1, x1 + w // 2), min(h - 1, y1 + h // 3)], "w": w, "h": h, "confidence": 0.7, "has_mask": False})
+        return out
 
     # -- agent brain --------------------------------------------------------------------------
     def chat(self, messages, tools=None):
@@ -143,11 +153,11 @@ class MockMeta:
         return _msg([("finish", {"summary": "(mock) Several clauses are worth asking about before signing.", "inspection_deadline": insp, "deposit_summary": dep})], n)
 
     def _condition_policy(self, messages, n):
-        photos = json.loads(re.search(r"Photos: (\[.*?\])", messages[0]["content"], re.S).group(1))
+        photos = json.loads(re.search(r"[Pp]hotos[^:\n]*: (\[.*?\])", messages[0]["content"], re.S).group(1))
         hist = list(_history(messages))
         scanned = {a["photo_id"]: r for nm, a, r in hist if nm == "scan_photo"}
         seg = {(a["photo_id"], a["concept"]): r for nm, a, r in hist if nm == "segment"}
-        checked = {(a["photo_id"], a["concept"], a["instance_index"]): r for nm, a, r in hist if nm == "check_outline"}
+        checked = {(a["photo_id"], a["concept"]): r for nm, a, r in hist if nm == "check_outline"}
         recorded = {(a["photo_id"], a["label"]) for nm, a, r in hist if nm == "record_finding"}
 
         todo = [("scan_photo", {"photo_id": p["id"]}) for p in photos if p["id"] not in scanned]
@@ -155,6 +165,11 @@ class MockMeta:
             return _msg(todo, n)
 
         issues = [(pid, i) for pid, r in scanned.items() for i in r.get("issues", [])]
+        move_out = "move-out agent" in messages[0]["content"]
+        compared = {(a["photo_id"], a["description"]): r.get("comparison_id") for nm, a, r in hist if nm == "compare_with_move_in"}
+        todo = [("compare_with_move_in", {"photo_id": pid, "description": i["description"]}) for pid, i in issues if move_out and (pid, i["description"]) not in compared]
+        if todo:
+            return _msg(todo, n)
 
         def concept_used(pid, label):
             simple = label.split()[-1]
@@ -177,8 +192,9 @@ class MockMeta:
         todo = []
         for pid, i in issues:
             c = concept_used(pid, i["label"])
-            if c and (pid, c, 0) not in checked:
-                todo.append(("check_outline", {"photo_id": pid, "concept": c, "instance_index": 0, "expected_description": i["description"]}))
+            if c and (pid, c) not in checked:
+                every = [x["index"] for x in seg[(pid, c)]["instances"]]
+                todo.append(("check_outline", {"photo_id": pid, "concept": c, "instance_indices": every, "expected_description": i["description"]}))
         if todo:
             return _msg(todo, n)
 
@@ -187,7 +203,7 @@ class MockMeta:
             if (pid, i["label"]) in recorded:
                 continue
             c = concept_used(pid, i["label"])
-            ok = bool(c and checked.get((pid, c, 0), {}).get("matches"))
+            matching = checked.get((pid, c), {}).get("matching_instances") if c else None
             todo.append(
                 (
                     "record_finding",
@@ -196,11 +212,15 @@ class MockMeta:
                         "label": i["label"],
                         "description": i["description"],
                         "severity": i["severity"],
-                        "instance_index": 0 if ok else None,
-                        "concept": c if ok else None,
+                        "instance_indices": matching or None,
+                        "concept": c if matching else None,
+                        **({"comparison_id": compared.get((pid, i["description"]))} if move_out else {}),
                     },
                 )
             )
         if todo:
             return _msg(todo, n)
+        if move_out and not any(nm == "draft_landlord_message" for nm, a, r in hist):
+            body = "Hello,\n\nThe damage listed in my move-in report was already there when I moved in. Please do not deduct it from my deposit. Thank you."
+            return _msg([("draft_landlord_message", {"subject": "Move-out: damage already there at move-in", "body": body})], n)
         return _msg([("finish", {"summary": f"(mock) Documented {len(recorded)} issue(s) across {len(photos)} photo(s)."})], n)

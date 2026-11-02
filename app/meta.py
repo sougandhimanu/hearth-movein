@@ -45,6 +45,16 @@ def prepare_image(raw: bytes) -> tuple[bytes, int, int]:
     return out.getvalue(), img.width, img.height
 
 
+def fix_text(text: str) -> str:
+    """Repair UTF-8 that was decoded as Windows-1252 somewhere upstream ("â€”" -> "—"). Leaves clean text alone."""
+    if not text or ("â€" not in text and "Ã" not in text):
+        return text
+    try:
+        return text.encode("cp1252").decode("utf-8")
+    except UnicodeError:
+        return text
+
+
 def loads_json(text: str) -> dict:
     try:
         return json.loads(text)
@@ -59,6 +69,13 @@ def loads_json(text: str) -> dict:
     raise ValueError("The model did not return valid JSON")
 
 
+def _float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_sam_output(text: str) -> list[dict]:
     """Turn SAM's text output into [{index, box:[x1,y1,x2,y2], w, h, confidence, has_mask}].
 
@@ -68,7 +85,10 @@ def parse_sam_output(text: str) -> list[dict]:
     for i, m in enumerate(SAM_RECORD.finditer(text or "")):
         raw = [x.strip() for x in m.group("box").split(";") if x.strip()]
         if any("=" in x for x in raw):  # tolerate key=value form
-            fields = dict(x.split("=", 1) for x in raw if "=" in x)
+            fields = {k.strip().lower(): v for k, v in (x.split("=", 1) for x in raw if "=" in x)}
+            for alias in ("confidence", "conf", "score", "s", "p"):  # the confidence key is not documented
+                if "c" not in fields and alias in fields:
+                    fields["c"] = fields[alias]
         else:  # documented positional form: x1;y1;x2;y2;w;h[;confidence]
             fields = dict(zip(("x1", "y1", "x2", "y2", "w", "h", "c"), raw))
         try:
@@ -81,7 +101,7 @@ def parse_sam_output(text: str) -> list[dict]:
                 "box": box,
                 "w": int(float(fields["w"])) if "w" in fields else None,
                 "h": int(float(fields["h"])) if "h" in fields else None,
-                "confidence": float(fields["c"]) if "c" in fields else None,
+                "confidence": _float(fields.get("c")),
                 "has_mask": bool(m.group("mask")),
             }
         )
@@ -100,10 +120,10 @@ class MetaClient:
         if tools:
             kwargs["tools"] = tools  # tool_choice may only be "auto", so we do not set it
         msg = self.client.chat.completions.create(**kwargs).choices[0].message
-        out = {"role": "assistant", "content": msg.content or ""}
+        out = {"role": "assistant", "content": fix_text(msg.content or "")}
         if msg.tool_calls:
             out["tool_calls"] = [
-                {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
+                {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": fix_text(c.function.arguments)}}
                 for c in msg.tool_calls
             ]
         return out
@@ -120,7 +140,7 @@ class MetaClient:
             input=[{"role": "user", "content": content}],
             text={"format": {"type": "json_schema", "name": name, "schema": schema, "strict": False}},
         )
-        return loads_json(resp.output_text)
+        return loads_json(fix_text(resp.output_text))
 
     # -- SAM 3.1: short noun phrase in, boxes (and masks) out ---------------------------------------
     def segment(self, jpeg: bytes, concept: str) -> list[dict]:

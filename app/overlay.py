@@ -15,6 +15,12 @@ def _font(size: int):
         return ImageFont.load_default()
 
 
+def _drawable(text: str) -> bool:
+    """The bundled font only covers Latin letters, and Pillow here cannot shape scripts such as Telugu,
+    so other labels are left off the image (the report lists them next to the box number)."""
+    return all(ord(c) < 0x250 for c in text)
+
+
 def draw_boxes(jpeg: bytes, boxes: list[list[int]], labels: list[str] | None = None) -> bytes:
     """boxes are [x1, y1, x2, y2] in the pixels of `jpeg`."""
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
@@ -26,7 +32,7 @@ def draw_boxes(jpeg: bytes, boxes: list[list[int]], labels: list[str] | None = N
         color = PALETTE[n % len(PALETTE)]
         x1, y1, x2, y2 = box
         d.rectangle([x1, y1, x2, y2], outline=color, width=width)
-        tag = f"{n + 1}" if not labels else f"{n + 1} {labels[n]}"
+        tag = f"{n + 1} {labels[n]}" if labels and _drawable(labels[n]) else f"{n + 1}"
         tw = d.textlength(tag, font=font)
         top = max(0, y1 - size - 8)
         d.rectangle([x1, top, x1 + tw + 10, top + size + 8], fill=color)

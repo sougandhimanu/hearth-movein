@@ -49,7 +49,8 @@ def _full(item_id: str) -> dict:
 
 @app.get("/")
 def index():
-    return FileResponse(config.ROOT / "static" / "index.html")
+    # no-cache: the browser re-checks the page on every load, so an updated app is never hidden behind an old copy
+    return FileResponse(config.ROOT / "static" / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/status")
@@ -87,7 +88,11 @@ def create_condition(
     rooms: str = Form(""),
     lease_id: str = Form(""),
     title: str = Form(""),
+    language: str = Form("English"),
+    move_in_id: str = Form(""),
+    matches: str = Form(""),
 ):
+    """A move-in report, or (with move_in_id) a move-out check. `matches` lists, per photo, the move-in photo_id it shows."""
     if not 1 <= len(files) <= config.MAX_PHOTOS:
         raise HTTPException(400, f"Upload between 1 and {config.MAX_PHOTOS} photos.")
     try:
@@ -99,6 +104,18 @@ def create_condition(
         lease = db.get_item(lease_id)
         if not lease or lease["kind"] != "lease":
             raise HTTPException(400, "The linked lease was not found.")
+    move_in, before_by_id = None, {}
+    if move_in_id:
+        move_in = db.get_item(move_in_id)
+        if not move_in or move_in["kind"] != "condition" or move_in["data"].get("mode") == "move_out":
+            raise HTTPException(400, "The move-in report was not found.")
+        if not lease and move_in.get("parent_id"):
+            lease = db.get_item(move_in["parent_id"])  # the lease the move-in report was linked to, for deposit context
+        before_by_id = {bp["photo_id"]: bp for bp in move_in["data"].get("photos", [])}
+    try:
+        match_list = json.loads(matches) if matches.strip() else []
+    except json.JSONDecodeError:
+        match_list = []
 
     photos = []
     for n, f in enumerate(files):
@@ -110,16 +127,36 @@ def create_condition(
         except Exception:
             raise HTTPException(400, f"{f.filename}: this does not look like a valid image.")
         room = (room_list[n] if n < len(room_list) and room_list[n] else f"Room {n + 1}")[:60]
-        photos.append({"photo_id": f"p{n + 1}", "room": room, "jpeg": jpeg, "w": w, "h": h, "filename": f.filename or f"photo{n + 1}.jpg"})
+        photo = {"photo_id": f"p{n + 1}", "room": room, "jpeg": jpeg, "w": w, "h": h, "filename": f.filename or f"photo{n + 1}.jpg"}
+        bp = before_by_id.get(match_list[n]) if n < len(match_list) else None
+        stored = db.get_file(bp["file_id"]) if bp else None
+        if stored and os.path.exists(stored["abs"]):
+            photo["room"] = bp["room"]
+            photo["before"] = {
+                "jpeg": Path(stored["abs"]).read_bytes(),
+                "findings": [f for f in move_in["data"].get("findings", []) if f["photo_id"] == bp["photo_id"]],
+            }
+        photos.append(photo)
 
-    item_id = db.create_item("condition", title.strip() or "Move-in condition report", parent_id=lease["id"] if lease else None)
+    default_title = "Move-out check" if move_in else "Move-in condition report"
+    parent = move_in["id"] if move_in else (lease["id"] if lease else None)
+    item_id = db.create_item("condition", title.strip() or default_title, parent_id=parent)
     try:
         file_ids = {p["photo_id"]: db.add_file(item_id, "photo", p["filename"], "image/jpeg", p["jpeg"]) for p in photos}
-        result = condition_agent.run(photos, lease)
+        # keep our own copy of each matched move-in photo, so the check survives if the move-in report is deleted
+        before_ids = {p["photo_id"]: db.add_file(item_id, "before", f"move-in-{p['photo_id']}.jpg", "image/jpeg", p["before"]["jpeg"]) for p in photos if p.get("before")}
+        about = {"id": move_in["id"], "title": move_in["title"], "generated_at": move_in["data"].get("generated_at", "")} if move_in else None
+        result = condition_agent.run(photos, lease, language, about)
         overlay_ids = {pid: db.add_file(item_id, "overlay", f"outlined-{pid}.jpg", "image/jpeg", jpeg) for pid, jpeg in result["overlays"].items()}
         data = {**result["data"], "mock": config.MOCK_MODE}
         data["photos"] = [
-            {"photo_id": p["photo_id"], "room": p["room"], "file_id": file_ids[p["photo_id"]], "overlay_file_id": overlay_ids.get(p["photo_id"])}
+            {
+                "photo_id": p["photo_id"],
+                "room": p["room"],
+                "file_id": file_ids[p["photo_id"]],
+                "overlay_file_id": overlay_ids.get(p["photo_id"]),
+                "before_file_id": before_ids.get(p["photo_id"]),
+            }
             for p in photos
         ]
         db.update_item(item_id, summary=result["summary"], data=data)
@@ -143,6 +180,7 @@ def list_items():
                 "summary": it["summary"],
                 "created_at": it["created_at"],
                 "parent_id": it["parent_id"],
+                "mode": d.get("mode", ""),
                 "count": len(d.get("flags", d.get("findings", []))),
                 "mock": d.get("mock", False),
             }
@@ -164,8 +202,12 @@ def delete_item(item_id: str):
 
 @app.get("/api/reminders")
 def reminders():
-    titles = {i["id"]: i["title"] for i in db.list_items()}
-    return [{**r, "item_title": titles.get(r["item_id"], "")} for r in db.list_reminders()]
+    items = {i["id"]: i for i in db.list_items()}
+    return [
+        {**r, "item_title": items[r["item_id"]]["title"], "item_created_at": items[r["item_id"]]["created_at"]}
+        for r in db.list_reminders()
+        if r["item_id"] in items
+    ]
 
 
 @app.get("/api/files/{file_id}")

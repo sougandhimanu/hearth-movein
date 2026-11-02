@@ -39,6 +39,16 @@
   .card-head p { margin:4px 0 0; color:var(--muted); font-size:13.5px; }
   .tool { display:flex; flex-direction:column; }
   .tool .actions { margin-top:auto; padding-top:18px; }
+  .grid2 .wide { grid-column:1 / -1; }
+  .cols { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; }
+  .room-row select { flex:1; padding:8px 10px; }
+  .pill.new { background:var(--redbg); color:var(--red); border-color:transparent; }
+  .pill.worse { background:var(--amber); color:var(--amberink); border-color:transparent; }
+  .pill.pre_existing { background:var(--tealbg); color:var(--tealink); border-color:transparent; }
+  .flag.new { border-left-color:var(--red); } .flag.worse { border-left-color:#e0a106; } .flag.pre_existing { border-left-color:var(--teal); }
+  .stat.new b { color:var(--red); } .stat.worse b { color:var(--amberink); } .stat.pre_existing b { color:var(--teal); }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .pair img { width:100%; display:block; border-radius:10px; border:1px solid var(--line); }
 
   /* form */
   label.field { display:block; font-weight:600; font-size:13px; margin:14px 0 6px; }
@@ -92,6 +102,7 @@
   .vault-item .kind.cond { background:var(--tealbg); color:var(--teal); }
   .vault-item .body { min-width:0; flex:1; } .vault-item b { display:block; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .vault-item .meta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .reminder-group { font-size:12px; font-weight:600; color:var(--muted); margin:14px 0 4px; }
   .empty { text-align:center; padding:28px 12px; color:var(--muted); font-size:14px; }
 
   /* detail */
@@ -118,7 +129,7 @@
   summary { cursor:pointer; font-weight:600; font-size:14px; }
 
   @media (max-width:900px) {
-    .grid2, .vault-layout.open { grid-template-columns:minmax(0,1fr); }
+    .grid2, .cols, .vault-layout.open { grid-template-columns:minmax(0,1fr); }
     .vault-layout.open #detail { position:static; max-height:none; }
   }
   @media (max-width:520px) { .wrap { padding:0 16px; } .card { padding:16px; } }
@@ -131,7 +142,7 @@
     <div class="logo" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></div>
     <div>
       <h1>Hearth Move-In Guardian</h1>
-      <p class="sub">Understand your lease before you sign. Document your room before you move in.</p>
+      <p class="sub">Understand your lease before you sign. Document your room before you move in. Prove it when you move out.</p>
     </div>
   </div>
   <div class="notes">
@@ -151,7 +162,7 @@
       </label>
       <label class="field" for="lang">Explain it in my language</label>
       <input id="lang" type="text" value="English" list="langs">
-      <datalist id="langs"><option>English</option><option>Spanish</option><option>Mandarin Chinese</option><option>Hindi</option><option>Korean</option><option>Vietnamese</option><option>Arabic</option><option>Tagalog</option><option>Bengali</option><option>Japanese</option><option>Portuguese</option></datalist>
+      <datalist id="langs"><option>English</option><option>Spanish</option><option>Mandarin Chinese</option><option>Hindi</option><option>Telugu</option><option>Tamil</option><option>Korean</option><option>Vietnamese</option><option>Arabic</option><option>Tagalog</option><option>Bengali</option><option>Japanese</option><option>Portuguese</option></datalist>
       <div class="actions"><button id="leaseBtn" class="block">Check my lease</button><div id="leaseMsg"></div></div>
     </section>
 
@@ -165,7 +176,31 @@
       <div id="roomInputs" class="rooms"></div>
       <label class="field" for="leaseLink">Link to a lease (optional)</label>
       <select id="leaseLink"><option value="">No linked lease</option></select>
+      <label class="field" for="condLang">Write the report in my language</label>
+      <input id="condLang" type="text" value="English" list="langs">
       <div class="actions"><button id="condBtn" class="block">Create report</button><div id="condMsg"></div></div>
+    </section>
+
+    <section class="card tool wide">
+      <div class="card-head"><div class="step">3</div><div><h2>Move-out check</h2><p>Compares your move-out photos with your move-in report, so you have proof of which damage was already there and are not charged for it.</p></div></div>
+      <div class="cols">
+        <div>
+          <label class="field" for="moveInReport">Your move-in report</label>
+          <select id="moveInReport"><option value="">Choose a move-in report</option></select>
+          <label class="drop" id="outDrop" style="margin-top:14px">
+            <input id="outFiles" type="file" accept=".png,.jpg,.jpeg,.webp" multiple>
+            <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="m21 16-5-5-8 8"/></svg></div>
+            <div><b id="outName">Add move-out photos</b><span id="outHint">Take them from the same spots as at move-in · click or drop them here</span></div>
+          </label>
+          <label class="field" for="outLang">Write the check in my language</label>
+          <input id="outLang" type="text" value="English" list="langs">
+        </div>
+        <div>
+          <label class="field">Match each photo to its move-in photo</label>
+          <div id="outRooms" class="rooms"><div class="muted">Choose a move-in report and add photos to match them.</div></div>
+        </div>
+      </div>
+      <div class="actions"><button id="outBtn" class="block">Compare with move-in</button><div id="outMsg"></div></div>
     </section>
   </div>
 
@@ -214,7 +249,7 @@ function busy(btn, on, label) {
 }
 
 // drop zones: clicking works through the <label>; this adds drag and drop
-for (const [zone, input] of [['leaseDrop', 'leaseFile'], ['photoDrop', 'photoFiles']]) {
+for (const [zone, input] of [['leaseDrop', 'leaseFile'], ['photoDrop', 'photoFiles'], ['outDrop', 'outFiles']]) {
   const z = $(zone);
   z.addEventListener('dragover', (e) => { e.preventDefault(); z.classList.add('over'); });
   z.addEventListener('dragleave', () => z.classList.remove('over'));
@@ -238,23 +273,48 @@ async function refresh() {
   sel.replaceChildren(h('option', { value: '' }, 'No linked lease'), ...leases.map(l => h('option', { value: l.id }, l.title)));
   sel.value = leases.some(l => l.id === cur) ? cur : '';
 
+  const moveIns = items.filter(i => i.kind === 'condition' && i.mode !== 'move_out');
+  const mi = $('moveInReport'), curMi = mi.value;
+  mi.replaceChildren(h('option', { value: '' }, moveIns.length ? 'Choose a move-in report' : 'No move-in reports yet: create one in step 2'),
+    ...moveIns.map(r => h('option', { value: r.id }, r.title + ' · ' + fmt(r.created_at))));
+  mi.value = moveIns.some(r => r.id === curMi) ? curMi : '';
+
+  // one group per lease, newest lease first, so reminders from different leases are never mixed
+  const groups = new Map();
+  [...reminders].sort((a, b) => b.item_created_at - a.item_created_at).forEach(r => {
+    if (!groups.has(r.item_id)) groups.set(r.item_id, []);
+    groups.get(r.item_id).push(r);
+  });
   $('reminders').replaceChildren(reminders.length ? h('div', {},
     h('h3', {}, 'Reminders'),
-    ...reminders.map(r => h('div', { class: 'reminder' }, h('span', { class: 'date' }, r.due_date || 'No date'),
-      h('div', {}, h('b', {}, r.title), r.note ? h('div', {}, r.note) : null)))) : '');
+    ...[...groups.values()].flatMap(rs => [
+      h('div', { class: 'reminder-group' }, rs[0].item_title + ' · ' + fmt(rs[0].item_created_at)),
+      ...rs.map(r => h('div', { class: 'reminder' }, h('span', { class: 'date' }, r.due_date || 'No date'),
+        h('div', {}, h('b', {}, r.title), r.note ? h('div', {}, r.note) : null)))])) : '');
 
   $('vault').replaceChildren(...(items.length ? [h('h3', {}, 'Saved')].concat(items.map(i => {
     const lease = i.kind === 'lease';
     return h('button', { class: 'vault-item' + (i.id === openId ? ' sel' : ''), 'data-id': i.id, onclick: () => openItem(i.id) },
       h('div', { class: 'kind' + (lease ? '' : ' cond'), html: lease ? ICON.lease : ICON.cond }),
       h('div', { class: 'body' },
-        h('b', {}, (lease ? 'Lease: ' : 'Condition report: ') + i.title),
+        h('b', {}, (lease ? 'Lease: ' : i.mode === 'move_out' ? 'Move-out check: ' : 'Condition report: ') + i.title),
         h('div', { class: 'muted' }, i.summary),
         h('div', { class: 'meta' }, fmt(i.created_at) + ' · ' + plural(i.count, lease ? 'flag' : 'finding') + (i.mock ? ' · mock' : ''))));
   })) : [h('div', { class: 'empty' }, 'Nothing saved yet. Check a lease or create a report to start your Vault.')]));
 }
 
-$('refresh').onclick = refresh;
+$('refresh').onclick = async () => {
+  const btn = $('refresh');
+  clearTimeout(btn.resetTimer);
+  btn.textContent = 'Refresh';  // so a click during "✓ Updated" does not keep that as the label
+  busy(btn, true, 'Refreshing…');
+  try {
+    await refresh();
+    if (openId) showItem(await api('/api/items/' + openId), false);
+    btn.textContent = '✓ Updated';
+  } catch (e) { btn.textContent = 'Refresh failed'; alert(e.message); }
+  finally { btn.disabled = false; btn.resetTimer = setTimeout(() => { btn.textContent = 'Refresh'; }, 1500); }
+};
 
 $('leaseFile').onchange = () => {
   const f = $('leaseFile').files[0];
@@ -288,12 +348,59 @@ $('condBtn').onclick = async () => {
   const fd = new FormData(); files.forEach(f => fd.append('files', f));
   fd.append('rooms', JSON.stringify([...document.querySelectorAll('[data-room]')].map(i => i.value)));
   fd.append('lease_id', $('leaseLink').value);
+  fd.append('language', $('condLang').value || 'English');
   busy($('condBtn'), true, 'Inspecting photos…'); say('condMsg', 'The agent is inspecting your photos. This can take a minute or two.', 'warn');
   try { const item = await api('/api/condition', { method: 'POST', body: fd }); say('condMsg', 'Saved to your Vault.'); openId = item.id; await refresh(); showItem(item); }
   catch (e) { say('condMsg', e.message, 'err'); } finally { busy($('condBtn'), false); }
 };
 
-async function openItem(id) { try { openId = id; showItem(await api('/api/items/' + id)); } catch (e) { alert(e.message); } }
+// ---- move-out check: match each move-out photo to a move-in photo of the same spot
+let moveInPhotos = [], outRender = 0;
+async function renderOutRooms() {
+  const files = [...$('outFiles').files], id = $('moveInReport').value, mine = ++outRender;
+  const photos = id ? (await api('/api/items/' + id)).data.photos || [] : [];
+  if (mine !== outRender) return;  // a newer choice was made while this one loaded
+  moveInPhotos = photos;
+  if (!files.length || !id) {
+    $('outRooms').replaceChildren(h('div', { class: 'muted' }, 'Choose a move-in report and add photos to match them.'));
+    return;
+  }
+  $('outRooms').replaceChildren(...files.map((f, i) =>
+    h('div', { class: 'room-row' },
+      h('img', { src: URL.createObjectURL(f), alt: '', title: f.name }),
+      h('span', { class: 'muted' }, '→'),
+      h('select', { 'data-match': i, 'aria-label': 'Move-in photo matching ' + f.name },
+        ...moveInPhotos.map((p, j) => h('option', { value: p.photo_id, selected: j === i ? 'selected' : null }, `${p.room} (move-in photo ${j + 1})`)),
+        h('option', { value: '', selected: i >= moveInPhotos.length ? 'selected' : null }, 'No matching move-in photo')))));
+}
+$('moveInReport').onchange = () => renderOutRooms().catch(e => say('outMsg', e.message, 'err'));
+$('outFiles').onchange = () => {
+  const files = [...$('outFiles').files];
+  $('outDrop').classList.toggle('has', files.length > 0);
+  $('outName').textContent = files.length ? plural(files.length, 'photo') + ' selected' : 'Add move-out photos';
+  $('outHint').textContent = files.length ? 'Match each one to its move-in photo · click to change' : 'Take them from the same spots as at move-in · click or drop them here';
+  renderOutRooms().catch(e => say('outMsg', e.message, 'err'));
+};
+$('outBtn').onclick = async () => {
+  const files = [...$('outFiles').files], id = $('moveInReport').value;
+  if (!id) return say('outMsg', 'Choose your move-in report first.', 'err');
+  if (!files.length) return say('outMsg', 'Add at least one move-out photo.', 'err');
+  const fd = new FormData(); files.forEach(f => fd.append('files', f));
+  fd.append('move_in_id', id);
+  fd.append('matches', JSON.stringify([...document.querySelectorAll('[data-match]')].map(s => s.value)));
+  fd.append('language', $('outLang').value || 'English');
+  busy($('outBtn'), true, 'Comparing with move-in…'); say('outMsg', 'The agent is comparing your photos. This can take a minute or two.', 'warn');
+  try { const item = await api('/api/condition', { method: 'POST', body: fd }); say('outMsg', 'Saved to your Vault.'); openId = item.id; await refresh(); showItem(item); }
+  catch (e) { say('outMsg', e.message, 'err'); } finally { busy($('outBtn'), false); }
+};
+
+async function openItem(id) {
+  try {
+    openId = id;
+    document.querySelectorAll('.vault-item').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+    showItem(await api('/api/items/' + id));
+  } catch (e) { alert(e.message); }
+}
 
 function closeDetail() {
   openId = null; $('detail').hidden = true; $('vaultLayout').classList.remove('open');
@@ -307,13 +414,15 @@ function severityStats(list, extra) {
     extra);
 }
 
-function showItem(item) {
+function showItem(item, reveal = true) {
   const d = item.data, box = $('detail'), lease = item.kind === 'lease';
   box.hidden = false; $('vaultLayout').classList.add('open');
+  // the panel sits at the top of the Vault (or below the list on narrow screens): bring it into view
+  if (reveal) requestAnimationFrame(() => box.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   document.querySelectorAll('.vault-item').forEach(el => el.classList.toggle('sel', el.dataset.id === item.id));
   const parts = [
     h('div', { class: 'detail-head' },
-      h('div', {}, h('div', { class: 'eyebrow' }, lease ? 'Lease' : 'Condition report'), h('h2', {}, item.title)),
+      h('div', {}, h('div', { class: 'eyebrow' }, lease ? 'Lease' : d.mode === 'move_out' ? 'Move-out check' : 'Condition report'), h('h2', {}, item.title)),
       h('div', { class: 'row' },
         h('button', { class: 'ghost', onclick: closeDetail }, 'Close'),
         h('button', { class: 'danger', onclick: async () => { if (confirm('Delete this item and everything saved with it?')) { await api('/api/items/' + item.id, { method: 'DELETE' }); closeDetail(); refresh(); } } }, 'Delete'))),
@@ -339,6 +448,32 @@ function showItem(item) {
     if (d.terms.length) parts.push(h('details', {}, h('summary', {}, `Key terms found (${d.terms.length})`),
       h('table', {}, h('tr', {}, h('th', {}, 'Term'), h('th', {}, 'Value'), h('th', {}, 'Quote found?')),
         ...d.terms.map(t => h('tr', {}, h('td', {}, t.name), h('td', {}, t.value), h('td', {}, t.verified ? '✓' : '✗ not found'))))));
+  } else if (d.mode === 'move_out') {
+    const STATUS = { new: 'New since move-in', worse: 'Worse than at move-in', pre_existing: 'Already there at move-in', unclear: 'Unclear' };
+    const c = d.status_counts || {};
+    parts.push(h('div', { class: 'muted' }, `Checked ${d.generated_at}, compared with “${d.move_in.title}” from ${d.move_in.generated_at.slice(0, 10)}`));
+    parts.push(h('div', { class: 'stats' }, ...Object.entries(STATUS).map(([k, label]) => h('div', { class: 'stat ' + k }, h('b', {}, c[k] || 0), h('span', {}, label)))));
+    if (c.pre_existing) parts.push(h('div', { class: 'banner ok' }, h('b', {}, `${plural(c.pre_existing, 'item')} already there at move-in. `), 'You should not be charged for these. The draft message below asks your landlord not to deduct them.'));
+    parts.push(h('h3', {}, 'Move-in vs move-out'));
+    parts.push(...d.photos.map(p => {
+      const after = '/api/files/' + (p.overlay_file_id || p.file_id);
+      const img = (src, alt) => h('a', { href: src, target: '_blank', rel: 'noopener', title: 'Open full size' }, h('img', { src, alt }));
+      return h('figure', { style: 'margin:0 0 12px' },
+        h('div', { class: 'pair' },
+          p.before_file_id ? img('/api/files/' + p.before_file_id, p.room + ' at move-in') : h('div', { class: 'empty' }, 'No move-in photo matched'),
+          img(after, p.room + ' at move-out')),
+        h('figcaption', { class: 'muted' }, `${p.room}: move-in (left), move-out (right)`));
+    }));
+    parts.push(h('h3', {}, `Damage found at move-out (${d.findings.length})`));
+    d.findings.forEach(f => parts.push(h('div', { class: 'flag ' + f.status },
+      h('div', { class: 'row' }, f.marker ? h('span', { class: 'pill', title: 'Box number on the move-out photo' }, '#' + f.marker) : null,
+        h('span', { class: 'pill ' + f.status }, STATUS[f.status] || f.status), h('b', {}, f.label), h('span', { class: 'pill' }, f.room)),
+      h('div', { style: 'margin-top:6px' }, f.description),
+      f.status_reason ? h('div', { class: 'ask' }, h('b', {}, 'Compared: '), f.status_reason) : null)));
+    if (d.draft) parts.push(h('h3', {}, 'Draft message to your landlord'), h('div', { class: 'draft' },
+      h('div', { class: 'subj' }, h('span', {}, h('b', {}, 'Subject: '), d.draft.subject),
+        h('button', { class: 'ghost', onclick: (e) => { navigator.clipboard.writeText(d.draft.body); e.currentTarget.textContent = 'Copied ✓'; } }, 'Copy message')),
+      h('pre', {}, d.draft.body)));
   } else {
     parts.push(h('div', { class: 'muted' }, `Created ${d.generated_at}`));
     parts.push(severityStats(d.findings, h('div', { class: 'stat' }, h('b', {}, `${d.outlines_verified}/${d.findings.length}`), h('span', {}, 'Outlines verified'))));
@@ -352,13 +487,13 @@ function showItem(item) {
     })));
     parts.push(h('h3', {}, `Findings (${d.findings.length})`));
     d.findings.forEach(f => parts.push(h('div', { class: 'flag ' + f.severity },
-      h('div', { class: 'row' }, h('span', { class: 'pill ' + f.severity }, f.severity), h('b', {}, f.label), h('span', { class: 'pill' }, f.room),
+      h('div', { class: 'row' }, f.marker ? h('span', { class: 'pill', title: 'Box number on the photo' }, '#' + f.marker) : null,
+        h('span', { class: 'pill ' + f.severity }, f.severity), h('b', {}, f.label), h('span', { class: 'pill' }, f.room),
         f.outline_verified ? h('span', { class: 'ok-mark' }, '✓ Outline verified') : h('span', { class: 'muted' }, 'No outline')),
       h('div', { style: 'margin-top:6px' }, f.description))));
   }
   box.replaceChildren(...parts.filter(Boolean));
   box.scrollTop = 0;
-  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 init().catch(e => alert(e.message));
