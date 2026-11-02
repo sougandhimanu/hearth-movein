@@ -1,33 +1,79 @@
 # Hearth Move-In Guardian
 
-Two agents for renters, built for the Meta Global AI Developer Hackathon:
+Helps renters understand a lease before they sign and document a room's condition before they move in, so they can protect their deposit.
+Built with Muse Spark and SAM 3.1 for the Meta Global AI Developer Hackathon.
 
-1. **Lease checker** (Muse Spark): reads a lease (PDF, photo or text), extracts terms with exact quotes, flags risky clauses, explains them in the renter's language, sets reminders and drafts a message to the landlord.
-   A flag is kept only if its quote is found verbatim in the lease text (checked in code, not by the model).
-2. **Move-in condition report** (Muse Spark + SAM 3.1): finds damage in room photos, outlines it with SAM 3.1, has Spark verify each outline, retries with a simpler noun if SAM returns nothing, and saves a timestamped report. It is linked to the lease's inspection deadline.
+> Not legal advice. Flags are questions to ask the landlord, each backed by an exact quote from the lease.
 
-Everything is saved in a **Vault** (SQLite + files) with the **agent chats** (what each agent did) and delete buttons.
-Not legal advice: flags are questions to ask the landlord.
+## What it does
 
-## Run
+### 1. Lease checker (Muse Spark)
+Upload a lease as a PDF, photo or `.txt` file and choose the language you want explanations in. The agent:
+- extracts the key terms (rent, deposit, dates, fees, renewal, entry, repairs), each with an exact quote;
+- flags risky or unusual clauses, explains them in your language and suggests a question to ask;
+- saves reminders for deadlines such as rent due dates, the move-in inspection window and the renewal notice;
+- drafts a polite email to the landlord about the flagged items.
+
+A flag is kept only if its quote is found word for word in the lease. That check runs in code, not in the model.
+
+### 2. Move-in condition report (Muse Spark + SAM 3.1)
+Upload photos of each room, optionally linked to a lease. The agent:
+- scans each photo for visible damage (stains, cracks, scratches, peeling paint, mold...);
+- outlines each defect with SAM 3.1, retrying with a simpler word if nothing is found;
+- has Muse Spark check each outline and keeps only the ones it confirms;
+- saves a timestamped report with outlined photos and the lease's inspection deadline.
+
+### Vault
+Leases, reports, reminders and the full agent chats (every tool call each agent made) are stored locally in SQLite. Anything can be deleted.
+
+## Quick start
 ```
 pip install -r requirements.txt
-cp .env.example .env        # add MODEL_API_KEY (never commit it)
+echo MODEL_API_KEY=your-key > .env
 uvicorn app.main:app --reload
 ```
-Open http://localhost:8000. Without a key the app runs in **MOCK MODE** (clearly bannered) so you can try the flow offline.
-Samples: `python scripts/make_samples.py`, then upload `samples/sample_lease.txt` (or the PDF) and the `room_*.jpg` photos.
-Tests: `pytest` (mock mode, 9 tests).
+Open http://localhost:8000.
 
-## Architecture
-`app/lease_agent.py`, `app/condition_agent.py`: tool-calling loops over Chat Completions (text only). Vision and SAM calls are wrapped as tools, so images and tool calling are never mixed in one request.
-`app/meta.py`: Meta API client (base URL `https://api.meta.ai/v1`, `MODEL_API_KEY`). `app/mock.py`: offline model. `app/db.py`: Vault.
+Without a key the app runs in **mock mode** with fake model responses (shown by a banner), so you can try the whole flow offline.
 
-## Not verified against the live API (test these first)
-- Responses API shapes: `text.format` json_schema, `input_image` / `input_file` parts (assumed OpenAI-compatible).
-- SAM 3.1 with defect words ("stain", "crack"), and the exact box record format (parser accepts positional and key=value).
-- SAM masks are not decoded, so only boxes are drawn (the docs mention a `meta-sam-parser` package for masks).
-- Accuracy on messy lease photos and non-English leases.
+To try it with sample data, upload `samples/sample_lease.txt` or `samples/sample_lease.pdf`, then the `samples/room_*.jpg` photos. To regenerate the samples, run `python scripts/make_samples.py`.
 
-## Hackathon notes
-Public repo, new work only, synthetic data only (the sample lease and photos are invented). Use the standard model, not "contributor" variants, for personal documents.
+### Settings
+Set these in `.env`. Only `MODEL_API_KEY` is required.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MODEL_API_KEY` | none | Meta Model API key. Never commit it. |
+| `SPARK_MODEL` | `muse-spark-1.3` | Model for reasoning and vision. |
+| `SAM_MODEL` | `sam-3.1` | Model for outlining damage. |
+| `META_BASE_URL` | `https://api.meta.ai/v1` | API base URL. |
+| `MOCK_MODE` | off | Set to `1` to force offline mode. |
+| `DATA_DIR` | `./data` | Where the Vault is stored. |
+
+## How it works
+```
+app/
+  main.py             FastAPI routes and Vault endpoints
+  lease_agent.py      lease checker: term extraction, then a tool-calling agent loop
+  condition_agent.py  condition report: scan, outline, check, record
+  meta.py             Meta API client (Chat Completions, Responses API, SAM 3.1)
+  mock.py             offline stand-in for the API
+  overlay.py          draws outline boxes on photos
+  db.py               Vault (SQLite and stored files)
+static/index.html     single-page UI
+```
+
+Both agents are tool-calling loops over Chat Completions. The model chooses which tool to call, and the code runs it and enforces the rules:
+- **Lease:** `flag_clause` rejects any quote not found in the lease text; `set_reminder` stores a date only if it is a valid `YYYY-MM-DD`.
+- **Condition:** `record_finding` attaches an outline only if `check_outline` confirmed it.
+
+Image analysis (Muse Spark vision and SAM 3.1) runs inside the tools, so images and tool calling are never mixed in one request.
+
+## Tests
+```
+pytest
+```
+Runs offline in mock mode.
+
+## Data and privacy
+Everything stays on your machine in `data/`, which is git-ignored. The sample lease and photos are invented. For personal documents, use the standard model, not the "contributor" variants.
