@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from . import condition_agent, config, db, lease_agent
+from . import condition_agent, config, db, dispute_agent, lease_agent
 from .meta import prepare_image
 
 app = FastAPI(title="Hearth Move-In Guardian")
@@ -167,6 +167,69 @@ def create_condition(
     return _full(item_id)
 
 
+STATUS_TEXT = {"pre_existing": "already there at move-in", "worse": "worse than at move-in", "new": "new since move-in", "unclear": "unclear"}
+
+
+def _evidence(report: dict) -> tuple[list[dict], str, dict | None]:
+    """Findings of a move-out check (with verdicts) or a move-in report (all documented at move-in), and the linked lease."""
+    d = report["data"]
+    if d.get("mode") == "move_out":
+        move_in = db.get_item((d.get("move_in") or {}).get("id", "")) if d.get("move_in") else None
+        lease = db.get_item(move_in["parent_id"]) if move_in and move_in.get("parent_id") else None
+        title = f"move-out check of {d.get('generated_at', '')[:10]}, compared with the move-in report of {(d.get('move_in') or {}).get('generated_at', '')[:10]}"
+        rows = [(f, f["status"], f.get("status_reason", "")) for f in d.get("findings", [])]
+    else:
+        lease = db.get_item(report["parent_id"]) if report.get("parent_id") else None
+        date = d.get("generated_at", "")[:10]
+        title = f"move-in report of {date}"
+        rows = [(f, "pre_existing", f"Listed in the move-in report dated {date}.") for f in d.get("findings", [])]
+    evidence = [
+        {"id": f"e{n}", "room": f["room"], "label": f["label"], "description": f["description"], "status": status, "status_text": STATUS_TEXT.get(status, status), "status_reason": reason}
+        for n, (f, status, reason) in enumerate(rows, 1)
+    ]
+    return evidence, title, lease if lease and lease["kind"] == "lease" else None
+
+
+def _lease_text(lease: dict) -> tuple[dict, str]:
+    """Key clauses for the prompt, and the text lease quotes are checked against (the original file when it can be read locally)."""
+    d = lease["data"]
+    clauses = list(dict.fromkeys([t["quote"] for t in d.get("terms", []) if t.get("verified")] + [f["quote"] for f in d.get("flags", [])]))
+    text = None
+    original = next((f for f in db.list_files(lease["id"]) if f["role"] == "original"), None)
+    if original and os.path.exists(original["abs"]):
+        text = lease_agent._local_text(original["mime"], Path(original["abs"]).read_bytes())
+    return {"title": lease["title"], "clauses": clauses[:30]}, text if text is not None else "\n".join(clauses)
+
+
+@app.post("/api/dispute")
+def create_dispute(file: UploadFile = File(...), evidence_id: str = Form(...), lease_id: str = Form(""), language: str = Form("English"), title: str = Form("")):
+    """Check a landlord's deduction list against a move-out check (or move-in report) and the lease."""
+    ext = _ext(file.filename)
+    if ext not in LEASE_TYPES:
+        raise HTTPException(400, "Upload the deduction list as a PDF, a text file, or a photo (png, jpg, webp).")
+    data = _read(file)
+    report = db.get_item(evidence_id)
+    if not report or report["kind"] != "condition":
+        raise HTTPException(400, "Choose a move-out check or move-in report as evidence.")
+    evidence, evidence_title, lease = _evidence(report)
+    if lease_id:
+        lease = db.get_item(lease_id)
+        if not lease or lease["kind"] != "lease":
+            raise HTTPException(400, "The linked lease was not found.")
+    lease_info, lease_text = _lease_text(lease) if lease else (None, "")
+    item_id = db.create_item("dispute", title.strip() or "Deduction dispute", parent_id=report["id"])
+    try:
+        db.add_file(item_id, "original", file.filename or "deductions", LEASE_TYPES[ext], data)
+        result = dispute_agent.run(file.filename or "deductions", LEASE_TYPES[ext], data, evidence, evidence_title, lease_info, lease_text, language)
+        about = {"evidence": {"id": report["id"], "title": evidence_title}, "lease": {"id": lease["id"], "title": lease["title"]} if lease else None}
+        db.update_item(item_id, summary=result["summary"], data={**result["data"], **about, "mock": config.MOCK_MODE})
+        db.add_chat(item_id, "dispute", result["transcript"])
+    except Exception as e:
+        db.delete_item(item_id)
+        raise HTTPException(502, f"The dispute agent failed: {type(e).__name__}: {str(e)[:300]}")
+    return _full(item_id)
+
+
 @app.get("/api/items")
 def list_items():
     out = []
@@ -181,7 +244,7 @@ def list_items():
                 "created_at": it["created_at"],
                 "parent_id": it["parent_id"],
                 "mode": d.get("mode", ""),
-                "count": len(d.get("flags", d.get("findings", []))),
+                "count": len(d.get("flags", d.get("findings", d.get("charges", [])))),
                 "mock": d.get("mock", False),
             }
         )

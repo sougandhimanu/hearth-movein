@@ -107,6 +107,14 @@ class MockMeta:
             if "full_text" in schema["properties"]:
                 out["full_text"] = text
             return out
+        if name == "deduction_items":
+            text = prompt.split("DEDUCTION LIST:\n", 1)[1] if "DEDUCTION LIST:\n" in prompt else (SAMPLES / "sample_deductions.txt").read_text()
+            charges = [
+                {"description": m.group(1).strip(), "amount": float(m.group(2).replace(",", "")), "quote": m.group(0).strip()}
+                for m in re.finditer(r"^\s*\d+\.\s*(.+?):\s*\$\s*([\d,]+(?:\.\d+)?)\s*$", text, re.M)
+            ]
+            total = re.search(r"total deducted:\s*\$\s*([\d,]+(?:\.\d+)?)", text, re.I)
+            return {"currency": "$", "charges": charges, "total_claimed": float(total.group(1).replace(",", "")) if total else None}
         if name == "photo_issues":
             rec = _recorded(images[0]) if images else None
             if rec:
@@ -157,6 +165,8 @@ class MockMeta:
         n_assistant = sum(1 for m in messages if m["role"] == "assistant")
         if "flag_clause" in names:
             return self._lease_policy(messages, n_assistant)
+        if "assess_charge" in names:
+            return self._dispute_policy(messages, n_assistant)
         return self._condition_policy(messages, n_assistant)
 
     def _lease_policy(self, messages, n):
@@ -197,6 +207,33 @@ class MockMeta:
         insp = _pick(sents, "within 48 hours")
         dep = _pick(sents, "security deposit of")
         return _msg([("finish", {"summary": "(mock) Several clauses are worth asking about before signing.", "inspection_deadline": insp, "deposit_summary": dep})], n)
+
+    def _dispute_policy(self, messages, n):
+        """Dispute a charge when a finding already there at move-in matches it, or a lease clause covers it; otherwise ask for proof."""
+        system = messages[0]["content"]
+        evidence = json.loads(re.search(r"EVIDENCE \(.*?\):\n(\[.*?\])\n", system, re.S).group(1))
+        charges = json.loads(re.search(r"CHARGES \(.*?\):\n(\[.*\])", system, re.S).group(1))
+        clauses = re.findall(r"^- (.+)$", system.split("key clauses", 1)[1].split("CHARGES", 1)[0], re.M)
+        if n == 0:
+            calls = []
+            for c in charges:
+                desc = c["description"].lower()
+                ev = [e["id"] for e in evidence if e["status"] == "pre_existing" and any(w in desc for w in e["label"].lower().split() if len(w) > 3)]
+                clause = next((q for q in clauses if "cleaning" in desc and "cleaning" in q.lower()), None)
+                if ev:
+                    calls.append(("assess_charge", {"charge_id": c["id"], "decision": "dispute", "evidence_ids": ev,
+                                                    "reason": "(mock) This damage is in the move-in report, so it was already there."}))
+                elif clause:
+                    calls.append(("assess_charge", {"charge_id": c["id"], "decision": "dispute", "lease_quote": clause,
+                                                    "reason": "(mock) The lease already keeps a cleaning fee, so cleaning should not be charged again."}))
+                else:
+                    calls.append(("assess_charge", {"charge_id": c["id"], "decision": "ask_for_proof",
+                                                    "reason": "(mock) There is no record of this damage, so ask for photos and a receipt."}))
+            return _msg(calls, n, "Checking each charge against the evidence and the lease.")
+        if n == 1:
+            body = "Hello,\n\nI have reviewed the deductions against my move-in report and the lease. Please see my response to each charge. Thank you."
+            return _msg([("draft_reply", {"subject": "Response to the deposit deductions", "body": body})], n, "Drafting the reply to the landlord.")
+        return _msg([("finish", {"summary": f"(mock) Checked {len(charges)} charge(s) against the evidence and the lease."})], n, "Done; writing the summary.")
 
     def _condition_policy(self, messages, n):
         photos = json.loads(re.search(r"[Pp]hotos[^:\n]*: (\[.*?\])", messages[0]["content"], re.S).group(1))

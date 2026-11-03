@@ -145,7 +145,7 @@
     <div class="logo" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></div>
     <div>
       <h1>Hearth Move-In Guardian</h1>
-      <p class="sub">Understand your lease before you sign. Document your room before you move in. Prove it when you move out.</p>
+      <p class="sub">Understand your lease before you sign. Document your room before you move in. Prove it when you move out, and dispute unfair deductions.</p>
     </div>
   </div>
   <div class="notes">
@@ -205,6 +205,26 @@
       </div>
       <div class="actions"><button id="outBtn" class="block">Compare with move-in</button><div id="outMsg"></div></div>
     </section>
+
+    <section class="card tool wide">
+      <div class="card-head"><div class="step">4</div><div><h2>Deduction dispute</h2><p>Checks your landlord's deposit deductions, line by line, against your move-in evidence and your lease, and drafts your reply.</p></div></div>
+      <div class="cols">
+        <div>
+          <label class="drop" id="dedDrop">
+            <input id="dedFile" type="file" accept=".pdf,.txt,.png,.jpg,.jpeg,.webp">
+            <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></div>
+            <div><b id="dedName">Landlord's deduction list</b><span id="dedHint">PDF, photo or .txt · click or drop a file here</span></div>
+          </label>
+        </div>
+        <div>
+          <label class="field" for="dedEvidence" style="margin-top:0">Your evidence</label>
+          <select id="dedEvidence"><option value="">Choose a move-out check or move-in report</option></select>
+          <label class="field" for="dedLang">Explain it in my language</label>
+          <input id="dedLang" type="text" value="English" list="langs">
+        </div>
+      </div>
+      <div class="actions"><button id="dedBtn" class="block">Check the deductions</button><div id="dedMsg"></div></div>
+    </section>
   </div>
 
   <div class="vault-layout" id="vaultLayout">
@@ -252,7 +272,7 @@ function busy(btn, on, label) {
 }
 
 // drop zones: clicking works through the <label>; this adds drag and drop
-for (const [zone, input] of [['leaseDrop', 'leaseFile'], ['photoDrop', 'photoFiles'], ['outDrop', 'outFiles']]) {
+for (const [zone, input] of [['leaseDrop', 'leaseFile'], ['photoDrop', 'photoFiles'], ['outDrop', 'outFiles'], ['dedDrop', 'dedFile']]) {
   const z = $(zone);
   z.addEventListener('dragover', (e) => { e.preventDefault(); z.classList.add('over'); });
   z.addEventListener('dragleave', () => z.classList.remove('over'));
@@ -282,6 +302,13 @@ async function refresh() {
     ...moveIns.map(r => h('option', { value: r.id }, r.title + ' · ' + fmt(r.created_at))));
   mi.value = moveIns.some(r => r.id === curMi) ? curMi : '';
 
+  // evidence for a dispute: move-out checks first (they carry verdicts), then move-in reports
+  const reports = items.filter(i => i.kind === 'condition').sort((a, b) => (b.mode === 'move_out') - (a.mode === 'move_out'));
+  const ev = $('dedEvidence'), curEv = ev.value;
+  ev.replaceChildren(h('option', { value: '' }, reports.length ? 'Choose a move-out check or move-in report' : 'No reports yet: create one in step 2 or 3'),
+    ...reports.map(r => h('option', { value: r.id }, (r.mode === 'move_out' ? 'Move-out check' : 'Move-in report') + ' · ' + fmt(r.created_at))));
+  ev.value = reports.some(r => r.id === curEv) ? curEv : '';
+
   // one group per lease, newest lease first, so reminders from different leases are never mixed
   const groups = new Map();
   [...reminders].sort((a, b) => b.item_created_at - a.item_created_at).forEach(r => {
@@ -298,11 +325,11 @@ async function refresh() {
   $('vault').replaceChildren(...(items.length ? [h('h3', {}, 'Saved')].concat(items.map(i => {
     const lease = i.kind === 'lease';
     return h('button', { class: 'vault-item' + (i.id === openId ? ' sel' : ''), 'data-id': i.id, onclick: () => openItem(i.id) },
-      h('div', { class: 'kind' + (lease ? '' : ' cond'), html: lease ? ICON.lease : ICON.cond }),
+      h('div', { class: 'kind' + (lease || i.kind === 'dispute' ? '' : ' cond'), html: lease || i.kind === 'dispute' ? ICON.lease : ICON.cond }),
       h('div', { class: 'body' },
-        h('b', {}, (lease ? 'Lease: ' : i.mode === 'move_out' ? 'Move-out check: ' : 'Condition report: ') + i.title),
+        h('b', {}, (lease ? 'Lease: ' : i.kind === 'dispute' ? 'Deduction dispute: ' : i.mode === 'move_out' ? 'Move-out check: ' : 'Condition report: ') + i.title),
         h('div', { class: 'muted' }, i.summary),
-        h('div', { class: 'meta' }, fmt(i.created_at) + ' · ' + plural(i.count, lease ? 'flag' : 'finding') + (i.mock ? ' · mock' : ''))));
+        h('div', { class: 'meta' }, fmt(i.created_at) + ' · ' + plural(i.count, lease ? 'flag' : i.kind === 'dispute' ? 'charge' : 'finding') + (i.mock ? ' · mock' : ''))));
   })) : [h('div', { class: 'empty' }, 'Nothing saved yet. Check a lease or create a report to start your Vault.')]));
 }
 
@@ -397,6 +424,23 @@ $('outBtn').onclick = async () => {
   catch (e) { say('outMsg', e.message, 'err'); } finally { busy($('outBtn'), false); }
 };
 
+// ---- deduction dispute
+$('dedFile').onchange = () => {
+  const f = $('dedFile').files[0];
+  $('dedDrop').classList.toggle('has', !!f);
+  $('dedName').textContent = f ? f.name : "Landlord's deduction list";
+  $('dedHint').textContent = f ? Math.max(1, Math.round(f.size / 1024)) + ' KB · click to change' : 'PDF, photo or .txt · click or drop a file here';
+};
+$('dedBtn').onclick = async () => {
+  const f = $('dedFile').files[0], id = $('dedEvidence').value;
+  if (!f) return say('dedMsg', "Choose your landlord's deduction list first.", 'err');
+  if (!id) return say('dedMsg', 'Choose your evidence: a move-out check or move-in report.', 'err');
+  const fd = new FormData(); fd.append('file', f); fd.append('evidence_id', id); fd.append('language', $('dedLang').value || 'English');
+  busy($('dedBtn'), true, 'Checking the deductions…'); say('dedMsg', 'The agent is checking each charge against your evidence and lease. This can take a minute.', 'warn');
+  try { const item = await api('/api/dispute', { method: 'POST', body: fd }); say('dedMsg', 'Saved to your Vault.'); openId = item.id; await refresh(); showItem(item); }
+  catch (e) { say('dedMsg', e.message, 'err'); } finally { busy($('dedBtn'), false); }
+};
+
 async function openItem(id) {
   try {
     openId = id;
@@ -422,7 +466,7 @@ const parseJSON = (s) => { try { return JSON.parse(s); } catch { return null; } 
 const STATUS_WORDS = { pre_existing: 'already there at move-in', worse: 'worse than at move-in', new: 'new since move-in', unclear: 'unclear' };
 const short = (s, n = 90) => (s && s.length > n ? s.slice(0, n) + '…' : s || '');
 
-function describeStep(name, a, r, room) {
+function describeStep(name, a, r, room, charge = () => null) {
   // returns [text, kind] where kind is 'ok', 'bad' or '' (neutral)
   if (!r) return [`${name}`, ''];
   if (r.error) return [`${name} → error: ${r.error}`, 'bad'];
@@ -444,6 +488,14 @@ function describeStep(name, a, r, room) {
                         : [`Quote rejected (${r.reason})${a.quote ? `: “${short(a.quote, 60)}”` : ''}`, 'bad'];
     case 'set_reminder': return r.saved ? [`Set a reminder: ${a.title}${a.due_date ? ` (${a.due_date})` : ''}`, 'ok'] : [`Reminder not saved (${r.reason}): ${a.title}`, 'bad'];
     case 'draft_landlord_message': return [`Drafted the landlord email: “${a.subject}”`, 'ok'];
+    case 'assess_charge': {
+      const c = charge(a.charge_id), what = c ? `“${short(c.description, 60)}”` : a.charge_id;
+      const words = { dispute: 'dispute it', ask_for_proof: 'ask for proof', accept: 'accept it' }[a.decision] || a.decision;
+      const backing = a.decision === 'dispute' ? ((a.evidence_ids || []).length ? ` (evidence ${a.evidence_ids.join(', ')})` : a.lease_quote ? ' (lease quote checked)' : '') : '';
+      return r.accepted ? [`Decided ${what} → ${words}${backing}`, a.decision === 'dispute' ? 'ok' : '']
+                        : [`Decision on ${what} rejected (${r.reason})`, 'bad'];
+    }
+    case 'draft_reply': return [`Drafted the reply to the landlord: “${a.subject}”`, 'ok'];
     case 'finish': return ['Finished and wrote the summary', 'ok'];
     default: return [name, ''];
   }
@@ -454,6 +506,8 @@ function agentSteps(item) {
   if (!chat) return null;
   const rooms = Object.fromEntries((item.data.photos || []).map(p => [p.photo_id, p.room]));
   const room = (pid) => rooms[pid] || pid || '';
+  const charges = Object.fromEntries((item.data.charges || []).map(c => [c.id, c]));
+  const charge = (id) => charges[id];
   const rows = [], pending = [];
   chat.transcript.forEach((m, i) => {
     if (m.role === 'assistant') {
@@ -462,7 +516,7 @@ function agentSteps(item) {
     } else if (m.role === 'tool') {
       const k = pending.findIndex(c => c.name === m.name);
       const call = k >= 0 ? pending.splice(k, 1)[0] : { name: m.name, arguments: '{}' };
-      const [text, kind] = describeStep(m.name, parseJSON(call.arguments) || {}, parseJSON(m.content), room);
+      const [text, kind] = describeStep(m.name, parseJSON(call.arguments) || {}, parseJSON(m.content), room, charge);
       rows.push(h('li', { class: kind }, (kind === 'ok' ? '✓ ' : kind === 'bad' ? '✗ ' : '') + text));
     } else if (m.role === 'user' && i > 1) {
       rows.push(h('li', { class: 'note' }, 'App: ' + m.content));
@@ -483,7 +537,7 @@ function showItem(item, reveal = true) {
   document.querySelectorAll('.vault-item').forEach(el => el.classList.toggle('sel', el.dataset.id === item.id));
   const parts = [
     h('div', { class: 'detail-head' },
-      h('div', {}, h('div', { class: 'eyebrow' }, lease ? 'Lease' : d.mode === 'move_out' ? 'Move-out check' : 'Condition report'), h('h2', {}, item.title)),
+      h('div', {}, h('div', { class: 'eyebrow' }, lease ? 'Lease' : item.kind === 'dispute' ? 'Deduction dispute' : d.mode === 'move_out' ? 'Move-out check' : 'Condition report'), h('h2', {}, item.title)),
       h('div', { class: 'row' },
         h('button', { class: 'ghost', onclick: closeDetail }, 'Close'),
         h('button', { class: 'danger', onclick: async () => { if (confirm('Delete this item and everything saved with it?')) { await api('/api/items/' + item.id, { method: 'DELETE' }); closeDetail(); refresh(); } } }, 'Delete'))),
@@ -509,6 +563,33 @@ function showItem(item, reveal = true) {
     if (d.terms.length) parts.push(h('details', {}, h('summary', {}, `Key terms found (${d.terms.length})`),
       h('table', {}, h('tr', {}, h('th', {}, 'Term'), h('th', {}, 'Value'), h('th', {}, 'Quote found?')),
         ...d.terms.map(t => h('tr', {}, h('td', {}, t.name), h('td', {}, t.value), h('td', {}, t.verified ? '✓' : '✗ not found'))))));
+  } else if (item.kind === 'dispute') {
+    const money = (n) => (d.currency || '') + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const DEC = { dispute: ['Dispute', 'pre_existing'], ask_for_proof: ['Ask for proof', 'worse'], accept: ['Accept', ''] };
+    const t = d.totals;
+    parts.push(h('div', { class: 'muted' }, `Checked against your ${d.evidence.title}` + (d.lease ? ` and the lease “${d.lease.title}”` : ' (no lease linked)')));
+    parts.push(h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('b', {}, money(t.charged)), h('span', {}, 'Deducted')),
+      h('div', { class: 'stat pre_existing' }, h('b', {}, money(t.disputed)), h('span', {}, 'You can dispute')),
+      h('div', { class: 'stat worse' }, h('b', {}, money(t.on_hold)), h('span', {}, 'Ask for proof')),
+      h('div', { class: 'stat' }, h('b', {}, money(t.accepted)), h('span', {}, 'Accepted'))));
+    if (t.disputed) parts.push(h('div', { class: 'banner ok' }, h('b', {}, `You can dispute ${money(t.disputed)} of the ${money(t.charged)} deducted. `), 'Each disputed charge below is backed by your move-in evidence or an exact quote from your lease.'));
+    if (!d.total_matches) parts.push(h('div', { class: 'banner warn' }, `The charges add up to ${money(t.charged)}, but the list says ${money(d.total_claimed)}. Ask the landlord to correct the total.`));
+    parts.push(h('h3', {}, `Charges (${d.charges.length})`));
+    d.charges.forEach(c => {
+      const [label, cls] = DEC[c.decision] || [c.decision, ''];
+      parts.push(h('div', { class: 'flag ' + cls },
+        h('div', { class: 'row' }, h('span', { class: 'pill ' + cls }, label), h('b', {}, c.description), h('span', { class: 'pill' }, money(c.amount)),
+          c.decision === 'dispute' && c.disputed_amount < c.amount ? h('span', { class: 'muted' }, `disputing ${money(c.disputed_amount)}`) : null,
+          c.quote_verified ? h('span', { class: 'ok-mark' }, '✓ Line found in the list') : null),
+        h('div', { style: 'margin-top:6px' }, c.reason),
+        ...(c.evidence || []).map(e => h('div', { class: 'ask' }, h('b', {}, 'Evidence: '), `${e.room}: ${e.label}, ${e.status_text}. ${e.status_reason || ''}`)),
+        c.lease_quote ? h('blockquote', {}, 'Lease: “' + c.lease_quote + '”') : null));
+    });
+    if (d.draft) parts.push(h('h3', {}, 'Your reply to the landlord'), h('div', { class: 'draft' },
+      h('div', { class: 'subj' }, h('span', {}, h('b', {}, 'Subject: '), d.draft.subject),
+        h('button', { class: 'ghost', onclick: (e) => { navigator.clipboard.writeText(d.draft.body); e.currentTarget.textContent = 'Copied ✓'; } }, 'Copy message')),
+      h('pre', {}, d.draft.body)));
   } else if (d.mode === 'move_out') {
     const STATUS = { new: 'New since move-in', worse: 'Worse than at move-in', pre_existing: 'Already there at move-in', unclear: 'Unclear' };
     const c = d.status_counts || {};

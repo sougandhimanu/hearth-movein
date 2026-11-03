@@ -350,3 +350,67 @@ def test_unedited_env_example_runs_in_mock_mode(key, mock):
     out = subprocess.run([sys.executable, "-c", "from app import config; print(config.MOCK_MODE)"],
                          env=env, capture_output=True, text=True, cwd=os.path.join(os.path.dirname(__file__), ".."))
     assert out.stdout.strip() == str(mock), out.stderr
+
+
+def dispute_chain():
+    """Sample lease -> move-in report (sample photos, linked) -> move-out check with the same photos."""
+    lease_pdf = open(os.path.join(os.path.dirname(__file__), "..", "samples", "sample_lease.txt"), "rb").read()
+    lease = client.post("/api/lease", files={"file": ("sample_lease.txt", lease_pdf, "text/plain")}).json()
+    move_in = client.post("/api/condition", files=sample_photos(), data={"lease_id": lease["id"]}).json()
+    move_out = client.post("/api/condition", files=sample_photos(), data={"move_in_id": move_in["id"], "matches": '["p1","p2","p3"]'}).json()
+    return lease, move_in, move_out
+
+
+def post_dispute(evidence_id, **data):
+    text = open(os.path.join(os.path.dirname(__file__), "..", "samples", "sample_deductions.txt"), "rb").read()
+    return client.post("/api/dispute", files={"file": ("sample_deductions.txt", text, "text/plain")}, data={"evidence_id": evidence_id, **data})
+
+
+def test_dispute_checks_each_charge_against_evidence_and_lease():
+    lease, move_in, move_out = dispute_chain()
+    r = post_dispute(move_out["id"])
+    assert r.status_code == 200, r.text
+    item = r.json()
+    d = item["data"]
+    assert item["kind"] == "dispute" and item["parent_id"] == move_out["id"] and d["lease"]["id"] == lease["id"]
+    by = {c["description"]: c for c in d["charges"]}
+    assert len(by) == 4 and all(c["quote_verified"] for c in d["charges"])
+    assert by["Repair and repaint wall scratches and scuff marks"]["decision"] == "dispute"
+    assert by["Repair peeling paint near the doorway"]["decision"] == "dispute"
+    cleaning = by["Professional carpet cleaning"]
+    assert cleaning["decision"] == "dispute" and "cleaning fee" in cleaning["lease_quote"]
+    assert by["Replace broken window blind in the kitchen"]["decision"] == "ask_for_proof"
+    assert d["totals"] == {"charged": 610, "disputed": 550, "on_hold": 60, "accepted": 0}
+    assert d["total_matches"] and d["draft"]["body"] and d["finished"]
+    assert any(i["id"] == item["id"] and i["count"] == 4 for i in client.get("/api/items").json())
+
+
+def test_dispute_also_works_with_only_a_move_in_report():
+    _, move_in, _ = dispute_chain()
+    d = post_dispute(move_in["id"]).json()["data"]
+    assert d["totals"]["disputed"] == 550  # everything in a move-in report counts as already there
+
+
+def test_a_dispute_needs_real_evidence():
+    from app.dispute_agent import DisputeSession
+
+    lease_text = open(os.path.join(os.path.dirname(__file__), "..", "samples", "sample_lease.txt")).read()
+    s = DisputeSession(
+        [{"id": "c1", "description": "Paint", "amount": 100.0}],
+        [{"id": "e1", "status": "new"}, {"id": "e2", "status": "pre_existing"}],
+        lease_text,
+    )
+    assert not s.call("assess_charge", {"charge_id": "c1", "decision": "dispute", "reason": "r"})["accepted"]  # no evidence
+    assert not s.call("assess_charge", {"charge_id": "c1", "decision": "dispute", "reason": "r", "evidence_ids": ["e1"]})["accepted"]  # new damage
+    fake = {"charge_id": "c1", "decision": "dispute", "reason": "r", "lease_quote": "The landlord pays for all repairs of any kind."}
+    assert not s.call("assess_charge", fake)["accepted"]  # quote not in the lease
+    assert not s.call("assess_charge", {"charge_id": "c9", "decision": "accept", "reason": "r"})["accepted"]  # unknown charge
+    out = s.call("assess_charge", {"charge_id": "c1", "decision": "dispute", "reason": "r", "evidence_ids": ["e2"], "disputed_amount": 500})
+    assert out["accepted"] and out["disputed_amount"] == 100.0  # never more than the charge
+
+
+def test_dispute_rejects_bad_inputs():
+    lease = post_lease()
+    assert post_dispute(lease["id"]).status_code == 400  # a lease is not evidence
+    r = client.post("/api/dispute", files={"file": ("x.exe", b"abc", "application/octet-stream")}, data={"evidence_id": lease["id"]})
+    assert r.status_code == 400

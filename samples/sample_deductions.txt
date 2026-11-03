@@ -1,0 +1,17 @@
+SYNTHETIC SAMPLE FOR TESTING ONLY. All names, amounts and terms are invented. Not a real document.
+
+Sample Property Group LLC
+Security deposit statement: 100 Example Street, Unit 4B, Sampletown
+Lease term: November 1, 2026 to October 31, 2027
+
+Security deposit held: $2,300
+Non-refundable cleaning fee (per lease): $500
+
+Deductions:
+1. Repair and repaint wall scratches and scuff marks: $180
+2. Repair peeling paint near the doorway: $250
+3. Professional carpet cleaning: $120
+4. Replace broken window blind in the kitchen: $60
+
+Total deducted: $610
+Balance returned to tenant: $1,190

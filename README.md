@@ -1,14 +1,14 @@
 # Hearth Move-In Guardian
 
-Helps renters keep their deposit. Understand your lease before you sign, document your room when you move in, and prove what was already there when you move out.
+Helps renters keep their deposit. Understand your lease before you sign, document your room when you move in, prove what was already there when you move out, and dispute unfair deductions line by line.
 Built with Muse Spark and SAM 3.1 for the Meta Global AI Developer Hackathon.
 
 > Not legal advice. Flags are questions to ask the landlord, each backed by an exact quote from the lease.
 
 ## Built during the hackathon
 All code in this repository was written during the Meta Global AI Developer Hackathon (October 26 – November 4, 2026). It is not based on an earlier product or codebase. Built during the event:
-- the three agents: lease checker, move-in condition report and move-out check;
-- the checks enforced in code that keep each agent honest (quotes, outlines, move-out verdicts);
+- the four agents: lease checker, move-in condition report, move-out check and deduction dispute;
+- the checks enforced in code that keep each agent honest (quotes, outlines, move-out verdicts, disputed charges);
 - support for other languages, including leases in Telugu and Hindi;
 - the web app, the local Vault and the automated tests.
 
@@ -28,6 +28,14 @@ Upload a photo of each room. The app finds visible damage (stains, cracks, scrat
 
 ### 3. Move-out check
 Upload move-out photos taken from the same spots and match them to your move-in report. The app compares each pair and marks every piece of damage as **already there at move-in**, **worse**, **new** or **unclear**. It then drafts an email asking the landlord not to deduct for anything that was already there. Damage is only marked "already there" when the side-by-side comparison confirms it.
+
+### 4. Deduction dispute
+When the landlord sends a list of deductions from your deposit, upload it with your move-out check (or move-in report). The agent goes through each charge and decides:
+- **dispute** it, when the damage was already there at move-in or the lease already covers the charge;
+- **ask for proof**, when there is no evidence either way;
+- **accept** it, when the damage is new.
+
+It then totals what you can dispute and drafts a point-by-point reply. A charge can only be disputed with evidence: a finding confirmed "already there at move-in", or an exact lease quote that the app checks against the lease itself.
 
 ### Works in your language
 Explanations, reminders and reports can be written in the language you choose (for example Hindi, Telugu, Tamil, Spanish or Japanese), and leases written in those languages can be checked too.
@@ -92,6 +100,7 @@ Use the files in the `samples` folder, in either mode:
 1. **Lease checker:** upload `sample_lease.pdf`. Optionally type another language, such as Hindi or Telugu.
 2. **Move-in report:** upload `photo_wall_marks.jpg`, `photo_peeling_paint.jpg` and `photo_wall_scuffs.jpg`, and link the lease. Open **Agent steps** under the report to see each decision the agent made.
 3. **Move-out check:** choose that move-in report, upload the same three photos, and keep the suggested matches. Because nothing changed, every defect is marked **already there at move-in**, and an email to the landlord is drafted.
+4. **Deduction dispute:** upload `sample_deductions.txt` (an invented landlord statement deducting $610) and choose the move-out check as evidence. The agent disputes the wall repairs (already there at move-in) and the carpet cleaning (the lease already keeps a $500 cleaning fee), and asks for proof of the window blind, which appears in no report.
 
 ## How it works
 Each feature is an agent, not a single model call: Muse Spark decides which tool to use next, the code runs the tool and enforces the rules, and the agent reacts to the results until the job is done.
@@ -110,6 +119,7 @@ app/
   main.py             web server and Vault endpoints
   lease_agent.py      lease checker
   condition_agent.py  move-in reports and move-out checks
+  dispute_agent.py    deduction dispute
   meta.py             Meta API client (Muse Spark, SAM 3.1)
   mock.py             offline stand-in for the API
   db.py               Vault storage
@@ -122,4 +132,4 @@ python -m pytest
 ```
 Runs offline in mock mode; no API key needed.
 
-The sample lease is invented. The sample photos are real photos taken by the author for this project. For personal documents, use the standard model, not the "contributor" variants.
+The sample lease and deduction statement are invented. The sample photos are real photos taken by the author for this project. For personal documents, use the standard model, not the "contributor" variants.
