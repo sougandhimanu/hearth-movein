@@ -312,13 +312,32 @@ def test_env_file_is_read_however_the_terminal_wrote_it(tmp_path, raw):
     assert dotenv_values(stream=_io.StringIO(_read_env_file(tmp_path / ".env")))["MODEL_API_KEY"] == "abc123"
 
 
+SAMPLE_PHOTOS = ["photo_wall_marks.jpg", "photo_peeling_paint.jpg", "photo_wall_scuffs.jpg"]
+
+
+def sample_photos():
+    sample = lambda n: open(os.path.join(os.path.dirname(__file__), "..", "samples", n), "rb").read()
+    return [("files", (n, sample(n), "image/jpeg")) for n in SAMPLE_PHOTOS]
+
+
 def test_readme_walkthrough_same_photos_are_already_there():
     """README step 4: the move-out check with the same sample photos marks everything as already there (mock mode)."""
-    sample = lambda n: open(os.path.join(os.path.dirname(__file__), "..", "samples", n), "rb").read()
-    photos = lambda: [("files", ("room_living.jpg", sample("room_living.jpg"), "image/jpeg")), ("files", ("room_bedroom.jpg", sample("room_bedroom.jpg"), "image/jpeg"))]
-    move_in = client.post("/api/condition", files=photos()).json()
-    out = client.post("/api/condition", files=photos(), data={"move_in_id": move_in["id"], "matches": '["p1","p2"]'}).json()
+    move_in = client.post("/api/condition", files=sample_photos()).json()
+    out = client.post("/api/condition", files=sample_photos(), data={"move_in_id": move_in["id"], "matches": '["p1","p2","p3"]'}).json()
     assert out["data"]["findings"] and all(f["status"] == "pre_existing" for f in out["data"]["findings"])
+
+
+def test_mock_mode_replays_the_recorded_real_results_for_sample_photos():
+    """Without a key, the sample photos show the real model's findings, with outlines where the real run put them."""
+    from app.mock import RECORDED
+
+    d = client.post("/api/condition", files=sample_photos()).json()["data"]
+    for n, rec in enumerate(RECORDED, 1):
+        got = {f["label"]: f["box"] for f in d["findings"] if f["photo_id"] == f"p{n}"}
+        assert got == {f["label"]: f["box"] for f in rec["findings"]}, rec["file"]
+    # a defect the real run could not outline (paint chip) is retried with a simpler word, then saved without an outline
+    chip = next(f for f in d["findings"] if f["label"] == "paint chip")
+    assert chip["box"] is None and not chip["outline_verified"]
 
 
 @pytest.mark.parametrize("key,mock", [("your-meta-model-api-key", True), ("", True), ("real-key-123", False)])

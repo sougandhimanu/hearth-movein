@@ -1,0 +1,93 @@
+{
+ "about": "Real Muse Spark + SAM 3.1 results for the sample photos, recorded from live runs. Mock mode replays them so the outlines land on the real damage.",
+ "photos": [
+  {
+   "file": "photo_wall_marks.jpg",
+   "size": [
+    768,
+    1024
+   ],
+   "findings": [
+    {
+     "label": "scratch mark",
+     "description": "Thin dark scratch mark on the lower left portion of the wall above the baseboard in Room 1.",
+     "severity": "low",
+     "box": [
+      184,
+      624,
+      240,
+      668
+     ]
+    },
+    {
+     "label": "scuff mark",
+     "description": "Faint scuff marks on the lower right portion of the wall above the baseboard in Room 1.",
+     "severity": "low",
+     "box": [
+      644,
+      741,
+      746,
+      788
+     ]
+    }
+   ]
+  },
+  {
+   "file": "photo_peeling_paint.jpg",
+   "size": [
+    768,
+    1024
+   ],
+   "findings": [
+    {
+     "label": "peeling paint",
+     "description": "Large area of bubbling and peeling paint with missing patches in the center of the white wall in Room 1.",
+     "severity": "medium",
+     "box": [
+      49,
+      0,
+      767,
+      899
+     ]
+    },
+    {
+     "label": "cracked paint",
+     "description": "Cracked and flaking paint along the left vertical edge of the wall in Room 1.",
+     "severity": "low",
+     "box": [
+      0,
+      3,
+      88,
+      832
+     ]
+    }
+   ]
+  },
+  {
+   "file": "photo_wall_scuffs.jpg",
+   "size": [
+    768,
+    1024
+   ],
+   "findings": [
+    {
+     "label": "scuff mark",
+     "description": "Curved dark scuff marks on the middle-right portion of the white wall near the corner edge in Room 1.",
+     "severity": "low",
+     "box": [
+      425,
+      430,
+      658,
+      675
+     ]
+    },
+    {
+     "label": "paint chip",
+     "description": "Small paint chips along the right vertical corner edge of the wall in Room 1.",
+     "severity": "low",
+     "box": null
+    }
+   ]
+  }
+ ]
+}

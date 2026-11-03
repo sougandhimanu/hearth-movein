@@ -3,6 +3,10 @@
 It is clearly labelled in the UI. It drives the REAL agent loops and tools, including one deliberately fabricated quote
 (which the quote verification must reject) and one SAM concept that returns nothing (which the agent must retry) and one defect that SAM splits into two instances
 (whose boxes must be merged into one outline).
+
+For the sample photos in samples/, it replays the real Muse Spark + SAM 3.1 results recorded in
+samples/recorded_results.json, so the outlines land on the real damage. Photos are recognised by a small
+average hash (robust to re-encoding); any other photo gets the placeholder results below.
 """
 from __future__ import annotations
 
@@ -13,7 +17,37 @@ from pathlib import Path
 
 from PIL import Image
 
-SAMPLE = Path(__file__).resolve().parent.parent / "samples" / "sample_lease.txt"
+SAMPLES = Path(__file__).resolve().parent.parent / "samples"
+SAMPLE = SAMPLES / "sample_lease.txt"
+
+
+def _ahash(img: Image.Image) -> int:
+    """64-bit average hash: the same photo still matches after resizing or JPEG re-encoding."""
+    px = list(img.convert("L").resize((8, 8)).tobytes())
+    avg = sum(px) / len(px)
+    return sum(1 << i for i, v in enumerate(px) if v > avg)
+
+
+def _load_recorded() -> list[dict]:
+    try:
+        photos = json.loads((SAMPLES / "recorded_results.json").read_text(encoding="utf-8"))["photos"]
+        for ph in photos:
+            ph["hash"] = _ahash(Image.open(SAMPLES / ph["file"]))
+        return photos
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+RECORDED = _load_recorded()
+
+
+def _recorded(jpeg: bytes) -> dict | None:
+    """The recorded real results for this photo, if it is one of the sample photos."""
+    if not RECORDED:
+        return None
+    h = _ahash(Image.open(io.BytesIO(jpeg)))
+    best = min(RECORDED, key=lambda ph: bin(ph["hash"] ^ h).count("1"))
+    return best if bin(best["hash"] ^ h).count("1") <= 6 else None
 
 
 def _sentences(text: str) -> list[str]:
@@ -36,10 +70,10 @@ def _history(messages):
             yield name, args, json.loads(m["content"])
 
 
-def _msg(calls: list[tuple[str, dict]], n_assistant: int) -> dict:
+def _msg(calls: list[tuple[str, dict]], n_assistant: int, note: str = "calling tools") -> dict:
     return {
         "role": "assistant",
-        "content": "(mock model) calling tools",
+        "content": f"(mock) {note}",
         "tool_calls": [
             {"id": f"mock_{n_assistant}_{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
             for i, (n, a) in enumerate(calls)
@@ -74,6 +108,9 @@ class MockMeta:
                 out["full_text"] = text
             return out
         if name == "photo_issues":
+            rec = _recorded(images[0]) if images else None
+            if rec:
+                return {"issues": [{k: f[k] for k in ("label", "description", "severity")} for f in rec["findings"]]}
             room = (re.search(r"Room: (.*?)\.", prompt) or [None, "room"])[1]
             return {
                 "issues": [
@@ -83,7 +120,9 @@ class MockMeta:
             }
         if name == "move_out_compare":  # identical photos, or the stain: already there at move-in; anything else is new
             same_photo = len(images) == 2 and images[0] == images[1]
-            if same_photo or "stain" in prompt.split("Defect seen in the move-out photo:", 1)[1].lower():
+            if same_photo:
+                return {"status": "pre_existing", "reason": "(mock) The move-in and move-out photos show the same damage, so it was already there."}
+            if "stain" in prompt.split("Defect seen in the move-out photo:", 1)[1].lower():
                 return {"status": "pre_existing", "reason": "(mock) The same stain is visible in the move-in photo."}
             return {"status": "new", "reason": "(mock) This area is clear in the move-in photo."}
         if name == "outline_check":
@@ -93,6 +132,13 @@ class MockMeta:
 
     # -- SAM ----------------------------------------------------------------------------------
     def segment(self, jpeg, concept):
+        rec = _recorded(jpeg)
+        if rec:  # the box the real run confirmed for this defect; nothing if the real run found no outline
+            for f in rec["findings"]:
+                if concept in (f["label"], f["label"].split()[-1]):
+                    w, h = rec["size"]
+                    return [{"index": 0, "box": f["box"], "w": w, "h": h, "confidence": 0.9, "has_mask": False}] if f["box"] else []
+            return []
         if "hairline" in concept:  # forces the agent to retry with a simpler noun
             return []
         img = Image.open(io.BytesIO(jpeg))
@@ -162,14 +208,14 @@ class MockMeta:
 
         todo = [("scan_photo", {"photo_id": p["id"]}) for p in photos if p["id"] not in scanned]
         if todo:
-            return _msg(todo, n)
+            return _msg(todo, n, "Scanning each photo for visible damage.")
 
         issues = [(pid, i) for pid, r in scanned.items() for i in r.get("issues", [])]
         move_out = "move-out agent" in messages[0]["content"]
         compared = {(a["photo_id"], a["description"]): r.get("comparison_id") for nm, a, r in hist if nm == "compare_with_move_in"}
         todo = [("compare_with_move_in", {"photo_id": pid, "description": i["description"]}) for pid, i in issues if move_out and (pid, i["description"]) not in compared]
         if todo:
-            return _msg(todo, n)
+            return _msg(todo, n, "Comparing each defect with the move-in photo.")
 
         def concept_used(pid, label):
             simple = label.split()[-1]
@@ -187,7 +233,8 @@ class MockMeta:
             elif seg[(pid, label)]["count"] == 0 and simple != label and (pid, simple) not in seg:
                 todo.append(("segment", {"photo_id": pid, "concept": simple}))
         if todo:
-            return _msg(todo, n)
+            retry = any((pid, i["label"]) in seg for pid, i in issues)
+            return _msg(todo, n, "Nothing was outlined for some defects, so I'll retry with a simpler word." if retry else "Outlining each defect with SAM 3.1.")
 
         todo = []
         for pid, i in issues:
@@ -196,7 +243,7 @@ class MockMeta:
                 every = [x["index"] for x in seg[(pid, c)]["instances"]]
                 todo.append(("check_outline", {"photo_id": pid, "concept": c, "instance_indices": every, "expected_description": i["description"]}))
         if todo:
-            return _msg(todo, n)
+            return _msg(todo, n, "Checking that each outline really shows the damage.")
 
         todo = []
         for pid, i in issues:
@@ -219,8 +266,10 @@ class MockMeta:
                 )
             )
         if todo:
-            return _msg(todo, n)
+            return _msg(todo, n, "Saving the findings to the report.")
         if move_out and not any(nm == "draft_landlord_message" for nm, a, r in hist):
             body = "Hello,\n\nThe damage listed in my move-in report was already there when I moved in. Please do not deduct it from my deposit. Thank you."
-            return _msg([("draft_landlord_message", {"subject": "Move-out: damage already there at move-in", "body": body})], n)
-        return _msg([("finish", {"summary": f"(mock) Documented {len(recorded)} issue(s) across {len(photos)} photo(s)."})], n)
+            return _msg([("draft_landlord_message", {"subject": "Move-out: damage already there at move-in", "body": body})], n, "Drafting the email to the landlord.")
+        labels = ", ".join(sorted({label for _, label in recorded}))
+        summary = f"(mock) Documented {len(recorded)} issue(s) across {len(photos)} photo(s)" + (f": {labels}." if labels else ".")
+        return _msg([("finish", {"summary": summary})], n, "Done; writing the summary.")

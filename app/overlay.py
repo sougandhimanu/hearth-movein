@@ -28,15 +28,21 @@ def draw_boxes(jpeg: bytes, boxes: list[list[int]], labels: list[str] | None = N
     width = max(3, img.width // 250)
     size = max(14, img.width // 45)
     font = _font(size)
-    for n, box in enumerate(boxes):
-        color = PALETTE[n % len(PALETTE)]
-        x1, y1, x2, y2 = box
-        d.rectangle([x1, y1, x2, y2], outline=color, width=width)
+    for n, box in enumerate(boxes):  # all outlines first, so no outline is drawn across a label
+        d.rectangle(box, outline=PALETTE[n % len(PALETTE)], width=width)
+    placed: list[tuple[float, float, float, float]] = []
+    tag_h = size + 8
+    for n, (x1, y1, x2, y2) in enumerate(boxes):
         tag = f"{n + 1} {labels[n]}" if labels and _drawable(labels[n]) else f"{n + 1}"
-        tw = d.textlength(tag, font=font)
-        top = max(0, y1 - size - 8)
-        d.rectangle([x1, top, x1 + tw + 10, top + size + 8], fill=color)
-        d.text((x1 + 5, top + 3), tag, fill=(255, 255, 255), font=font)
+        tw = d.textlength(tag, font=font) + 10
+        left = max(0, min(x1, img.width - tw))  # keep the label inside the photo
+        top = y1 - tag_h if y1 >= tag_h else y1  # above the box, or just inside it at the top edge
+        # move down past any label already drawn there, so two labels never cover each other
+        while any(left < r[2] and left + tw > r[0] and top < r[3] and top + tag_h > r[1] for r in placed):
+            top += tag_h
+        placed.append((left, top, left + tw, top + tag_h))
+        d.rectangle([left, top, left + tw, top + tag_h], fill=PALETTE[n % len(PALETTE)])
+        d.text((left + 5, top + 3), tag, fill=(255, 255, 255), font=font)
     out = io.BytesIO()
     img.save(out, "JPEG", quality=88)
     return out.getvalue()

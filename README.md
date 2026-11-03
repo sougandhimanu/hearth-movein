@@ -76,7 +76,7 @@ Uses Muse Spark and SAM 3.1, so you need a Meta Model API key from [dev.meta.ai]
 Each check takes 1-2 minutes while the agents work. `.env.example` also lists optional settings, such as `SPARK_MODEL` and `SAM_MODEL` to choose models.
 
 ## Run in mock mode (no API key)
-Runs offline with a fake model, to try the app without a key. Results are canned (the same damage and clauses every time), and a banner at the top says mock mode is on.
+Runs offline with a fake model, to try the app without a key. A banner at the top says mock mode is on. For the sample photos, mock mode replays results recorded from a real Muse Spark and SAM 3.1 run, so the outlines land on the real damage. Other photos and leases get placeholder results.
 
 1. Skip the `.env` file, or leave the placeholder key in it unchanged.
 2. Start the app:
@@ -90,8 +90,8 @@ To force mock mode even with a key in `.env`, add the line `MOCK_MODE=1` to it.
 ## Try it with the sample files
 Use the files in the `samples` folder, in either mode:
 1. **Lease checker:** upload `sample_lease.pdf`. Optionally type another language, such as Hindi or Telugu.
-2. **Move-in report:** upload `room_living.jpg` and `room_bedroom.jpg`, and link the lease.
-3. **Move-out check:** choose that move-in report, upload the same two photos, and keep the suggested matches. Because nothing changed, every defect is marked **already there at move-in**, and an email to the landlord is drafted.
+2. **Move-in report:** upload `photo_wall_marks.jpg`, `photo_peeling_paint.jpg` and `photo_wall_scuffs.jpg`, and link the lease. Open **Agent steps** under the report to see each decision the agent made.
+3. **Move-out check:** choose that move-in report, upload the same three photos, and keep the suggested matches. Because nothing changed, every defect is marked **already there at move-in**, and an email to the landlord is drafted.
 
 ## How it works
 Each feature is an agent, not a single model call: Muse Spark decides which tool to use next, the code runs the tool and enforces the rules, and the agent reacts to the results until the job is done.
@@ -122,4 +122,4 @@ python -m pytest
 ```
 Runs offline in mock mode; no API key needed.
 
-The sample lease and photos are invented. For personal documents, use the standard model, not the "contributor" variants.
+The sample lease is invented. The sample photos are real photos taken by the author for this project. For personal documents, use the standard model, not the "contributor" variants.
