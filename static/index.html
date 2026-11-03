@@ -47,6 +47,9 @@
   .pill.pre_existing { background:var(--tealbg); color:var(--tealink); border-color:transparent; }
   .flag.new { border-left-color:var(--red); } .flag.worse { border-left-color:#e0a106; } .flag.pre_existing { border-left-color:var(--teal); }
   .stat.new b { color:var(--red); } .stat.worse b { color:var(--amberink); } .stat.pre_existing b { color:var(--teal); }
+  .steps ol { margin:8px 0 0; padding-left:22px; font-size:13.5px; }
+  .steps li { margin:5px 0; } .steps li.ok { color:var(--tealink); } .steps li.bad { color:var(--red); }
+  .steps li.note { list-style:none; margin-left:-22px; color:var(--muted); font-style:italic; }
   .pair { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .pair img { width:100%; display:block; border-radius:10px; border:1px solid var(--line); }
 
@@ -414,6 +417,64 @@ function severityStats(list, extra) {
     extra);
 }
 
+// ---- agent steps: the saved tool calls of each run, in plain words
+const parseJSON = (s) => { try { return JSON.parse(s); } catch { return null; } };
+const STATUS_WORDS = { pre_existing: 'already there at move-in', worse: 'worse than at move-in', new: 'new since move-in', unclear: 'unclear' };
+const short = (s, n = 90) => (s && s.length > n ? s.slice(0, n) + '…' : s || '');
+
+function describeStep(name, a, r, room) {
+  // returns [text, kind] where kind is 'ok', 'bad' or '' (neutral)
+  if (!r) return [`${name}`, ''];
+  if (r.error) return [`${name} → error: ${r.error}`, 'bad'];
+  const where = room(a.photo_id);
+  switch (name) {
+    case 'scan_photo': return [`Scanned ${where} → ${r.issues.length ? `found ${plural(r.issues.length, 'defect')}: ${r.issues.map(i => i.label).join(', ')}` : 'no visible damage'}`, ''];
+    case 'segment': return [`Outlined “${r.concept}” in ${where} with SAM 3.1 → ${r.count ? plural(r.count, 'piece') + ' found' : 'nothing found'}`, r.count ? '' : 'bad'];
+    case 'check_outline': {
+      if (!r.matching_instances) return [`Checked the outline of “${a.concept}” → ${r.matches ? 'confirmed' : 'rejected'}${r.reason ? ` (${short(r.reason)})` : ''}`, r.matches ? 'ok' : 'bad'];  // older reports: one piece at a time
+      const n = (a.instance_indices || []).length, ok = r.matching_instances.length;
+      return [`Checked the outline of “${a.concept}” → ${ok} of ${n} pieces confirmed${ok && !r.covers_all ? ', but they do not cover all of it' : ''}${r.reason ? ` (${short(r.reason)})` : ''}`, ok ? 'ok' : 'bad'];
+    }
+    case 'compare_with_move_in': return [`Compared “${short(a.description, 50)}” with the move-in photo → ${STATUS_WORDS[r.status] || r.status}${r.reason ? ` (${short(r.reason)})` : ''}`, r.status === 'pre_existing' ? 'ok' : ''];
+    case 'record_finding':
+      if (r.recorded === false) return [`Skipped “${a.label}”: ${r.reason}`, 'bad'];
+      return [`Recorded “${a.label}” in ${where}${r.status ? ` as ${STATUS_WORDS[r.status]}` : ''} → ${r.outline_verified ? 'outline verified' : 'no outline'}${r.note ? ` (${r.note})` : ''}`, 'ok'];
+    case 'flag_clause':
+      return r.accepted ? [`Flagged ${a.category ? `a ${a.severity} ${a.category} clause` : 'a clause'}, quote found in the lease${a.quote ? `: “${short(a.quote, 70)}”` : ''}`, 'ok']
+                        : [`Quote rejected (${r.reason})${a.quote ? `: “${short(a.quote, 60)}”` : ''}`, 'bad'];
+    case 'set_reminder': return r.saved ? [`Set a reminder: ${a.title}${a.due_date ? ` (${a.due_date})` : ''}`, 'ok'] : [`Reminder not saved (${r.reason}): ${a.title}`, 'bad'];
+    case 'draft_landlord_message': return [`Drafted the landlord email: “${a.subject}”`, 'ok'];
+    case 'finish': return ['Finished and wrote the summary', 'ok'];
+    default: return [name, ''];
+  }
+}
+
+function agentSteps(item) {
+  const chat = (item.chats || [])[0];
+  if (!chat) return null;
+  const rooms = Object.fromEntries((item.data.photos || []).map(p => [p.photo_id, p.room]));
+  const room = (pid) => rooms[pid] || pid || '';
+  const rows = [], pending = [];
+  chat.transcript.forEach((m, i) => {
+    if (m.role === 'assistant') {
+      if (m.content) rows.push(h('li', { class: 'note' }, 'Agent: ' + m.content));
+      (m.tool_calls || []).forEach(c => pending.push(c));
+    } else if (m.role === 'tool') {
+      const k = pending.findIndex(c => c.name === m.name);
+      const call = k >= 0 ? pending.splice(k, 1)[0] : { name: m.name, arguments: '{}' };
+      const [text, kind] = describeStep(m.name, parseJSON(call.arguments) || {}, parseJSON(m.content), room);
+      rows.push(h('li', { class: kind }, (kind === 'ok' ? '✓ ' : kind === 'bad' ? '✗ ' : '') + text));
+    } else if (m.role === 'user' && i > 1) {
+      rows.push(h('li', { class: 'note' }, 'App: ' + m.content));
+    }
+  });
+  const calls = rows.filter(r => !r.classList.contains('note')).length;
+  return h('details', { class: 'steps' },
+    h('summary', {}, `Agent steps (${plural(calls, 'tool call')} in ${plural(item.data.turns || 0, 'round')})`),
+    h('p', { class: 'muted' }, 'What the agent did, in order: each tool it chose, and what came back. ✗ marks a check that failed, where the agent had to adapt.'),
+    h('ol', {}, ...rows));
+}
+
 function showItem(item, reveal = true) {
   const d = item.data, box = $('detail'), lease = item.kind === 'lease';
   box.hidden = false; $('vaultLayout').classList.add('open');
@@ -492,6 +553,7 @@ function showItem(item, reveal = true) {
         f.outline_verified ? h('span', { class: 'ok-mark' }, '✓ Outline verified') : h('span', { class: 'muted' }, 'No outline')),
       h('div', { style: 'margin-top:6px' }, f.description))));
   }
+  parts.push(agentSteps(item));
   box.replaceChildren(...parts.filter(Boolean));
   box.scrollTop = 0;
 }

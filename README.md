@@ -5,6 +5,13 @@ Built with Muse Spark and SAM 3.1 for the Meta Global AI Developer Hackathon.
 
 > Not legal advice. Flags are questions to ask the landlord, each backed by an exact quote from the lease.
 
+## Built during the hackathon
+All code in this repository was written during the Meta Global AI Developer Hackathon (October 26 – November 4, 2026). It is not based on an earlier product or codebase. Built during the event:
+- the three agents: lease checker, move-in condition report and move-out check;
+- the checks enforced in code that keep each agent honest (quotes, outlines, move-out verdicts);
+- support for other languages, including leases in Telugu and Hindi;
+- the web app, the local Vault and the automated tests.
+
 ## What it does
 
 ### 1. Lease checker
@@ -87,8 +94,16 @@ Use the files in the `samples` folder, in either mode:
 3. **Move-out check:** choose that move-in report, upload the same two photos, and keep the suggested matches. Because nothing changed, every defect is marked **already there at move-in**, and an email to the landlord is drafted.
 
 ## How it works
-Each feature is an agent: the model decides which tool to use next, and the code runs the tool and enforces the rules, so the model cannot skip a check.
-Muse Spark reads leases and photos; SAM 3.1 outlines the damage.
+Each feature is an agent, not a single model call: Muse Spark decides which tool to use next, the code runs the tool and enforces the rules, and the agent reacts to the results until the job is done.
+
+A move-out check, for example:
+1. **Scan:** Muse Spark lists the damage it sees in each move-out photo.
+2. **Compare:** for each defect, Muse Spark looks at the move-in and move-out photos side by side and decides: already there, worse, new or unclear.
+3. **Outline:** SAM 3.1 outlines the defect. One defect often comes back as several pieces, so Muse Spark checks which pieces really show it, and they are merged into one outline.
+4. **Record:** the finding is saved. Its verdict can only come from that defect's own comparison, so the agent cannot claim damage was "already there" on its own.
+5. **Act:** the agent drafts the landlord email from the verified results and writes a summary.
+
+When a step fails, the agent adapts. It retries SAM with a simpler word, re-quotes a lease clause that did not match, or marks a defect "unclear" instead of guessing. Every tool call is saved in the Vault.
 
 ```
 app/
